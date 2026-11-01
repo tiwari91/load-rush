@@ -335,7 +335,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
-<script>
+<script id="model">
 "use strict";
 /* ================================================================== parts */
 const PARTS = {
@@ -459,7 +459,7 @@ const LEVELS = [
               "Read replicas keep reads working, but writes need a primary. Replicas are not a backup plan for writes.",
               "Backups are for lost data; standbys are for lost machines. You want both.",
               "Hands-on: in Terraform, RDS Multi-AZ is one line: `multi_az = true`."] },
-  { id: "zone", watch: "Each server is in building A or B (see the tag). Building A loses power at 0:40.", staff: ["Spare capacity in both zones costs money. What is the cheapest setup that still survives losing a zone?", "Sometimes a whole region fails. When is a second region worth it?"], principal: ["Which systems must survive a whole region going down, and which can wait?", "How do you keep that list current as the business changes?"],
+  { id: "zone", watch: "Each server sits in zone A or zone B (see its tag); a zone is a separate building. Zone A loses power at 0:40.", staff: ["Spare capacity in both zones costs money. What is the cheapest setup that still survives losing a zone?", "Sometimes a whole region fails. When is a second region worth it?"], principal: ["Which systems must survive a whole region going down, and which can wait?", "How do you keep that list current as the business changes?"],
     name: "Zone Outage", duration: 100, cap: 50,
     blurb: "Half your servers vanish at once.",
     brief: "AWS regions are split into zones, separate buildings with their own power. Your servers alternate between zone A and zone B (see the A/B tag). Today zone A has power problems.",
@@ -504,47 +504,105 @@ const SANDBOX = { id: "sandbox", name: "Sandbox", sandbox: true, duration: Infin
 let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, heavyFrac: 0, payFrac: 0 };
 
 /* ================================================================== teach mode cards */
-const TEACH = {
-  nolb: { deeper: "Load balancers also check server health and stop sending requests to sick servers. That is what makes a crash survivable.", title: "Two servers, one doing all the work", diagram: [["Users", ""], ["App server 1", "100% busy", "hot"], ["App server 2", "idle", "down"]],
+/* Every problem the game can detect, in priority order. Each one has, in one place:
+   when (is it happening), text (what the pager says), fix (the Mid-level hint), teach (the Teach mode card). */
+const PROBLEMS = [
+  { key: "nolb",
+    when: (m, apps, r) => apps >= 2 && !m.lb,
+    text: (m, apps, r) => `You have ${apps} app servers, but only one is getting requests. Something has to spread the requests across them.`,
+    fix: "Drag a <b>Load balancer</b> into the Entry column.",
+    teach: { deeper: "Load balancers also check server health and stop sending requests to sick servers. That is what makes a crash survivable.", title: "Two servers, one doing all the work", diagram: [["Users", ""], ["App server 1", "100% busy", "hot"], ["App server 2", "idle", "down"]],
     explain: "Users connect to one address. Without something in front that shares out the requests, they all land on the first server. The second one sits idle while the first one drowns.",
-    q: "What spreads requests across servers?", options: [["Load balancer", true, "Yes. A load balancer sits in the Entry column and sends each request to the least busy healthy server."], ["Cache", false, "A cache saves database reads. It does not decide which server gets a request."], ["More app servers", false, "More servers still get nothing without a load balancer in front."]] },
-  apphot: { deeper: "Scaling out only works if servers share nothing: no sessions in memory, no local files, no sticky routing.", title: "The app servers are full", diagram: [["Users", ""], ["Load balancer", ""], ["App servers", "over 90% busy", "hot"], ["Database", ""]],
-    explain: "Each server can only answer so many requests a second. Near 100% busy, requests wait in line, so response time shoots up. Past 100%, requests start to fail.",
-    q: "What is the quickest fix here?", options: [["Add app servers (or an autoscaler)", true, "Yes. App code that keeps no data can scale out: more copies, each taking a share."], ["Add a read replica", false, "Replicas help the database. The bottleneck right now is the app servers."], ["Remove the cache", false, "That would send more work to the database and make things worse."]] },
-  dbhot: { deeper: "A cache brings a new problem: old data. Decide per kind of data how old a cached answer may be.", title: "The database is the bottleneck", diagram: [["App servers", ""], ["Primary DB", "over 90% busy", "hot"], ["Cache", "could help", "fix"]],
-    explain: "Almost every page reads from the database. When thousands of people read the same product pages, the database answers the same question again and again.",
-    q: "What takes repeated reads off the database?", options: [["A cache (or read replicas)", true, "Yes. A cache remembers answers to common reads. Replicas also share reads. Writes still go to the primary."], ["More app servers", false, "More app servers send even more queries to the database."], ["A rate limiter", false, "These are real customers. Blocking them is not a fix."]] },
-  bots: { deeper: "Limit by more than IP address: API key, user, or behaviour. Many real users can share one address.", title: "This traffic is not customers", diagram: [["Bots", "2000/s", "hot"], ["Edge", "no filter"], ["App servers", "drowning", "hot"]],
+    q: "What spreads requests across servers?", options: [["Load balancer", true, "Yes. A load balancer sits in the Entry column and sends each request to the least busy healthy server."], ["Cache", false, "A cache saves database reads. It does not decide which server gets a request."], ["More app servers", false, "More servers still get nothing without a load balancer in front."]] } },
+  { key: "bots",
+    when: (m, apps, r) => m.bots > 300 && !m.waf,
+    text: (m, apps, r) => `${Math.round(m.bots)} requests a second come from a few IP addresses. These are not customers.`,
+    fix: "Drag a <b>Rate limiter</b> into the Edge column.",
+    teach: { deeper: "Limit by more than IP address: API key, user, or behaviour. Many real users can share one address.", title: "This traffic is not customers", diagram: [["Bots", "2000/s", "hot"], ["Edge", "no filter"], ["App servers", "drowning", "hot"]],
     explain: "Requests jumped 8× but sign-ups did not move, and most requests come from a few dozen IP addresses. That is a bot or a scraper, not a crowd.",
-    q: "What is the cheapest fix?", options: [["Rate limiter at the edge", true, "Yes. It blocks clients that send far too many requests, before they reach your servers, for about $1 an hour."], ["Many more app servers", false, "You would pay to serve bots, and they can always send more."], ["A CDN", false, "A CDN serves static files. Bots hit your dynamic pages, so they still get through."]] },
-  static: { deeper: "Put a version or hash in file names, so files can be cached for a year and a release still shows up at once.", title: "Your app is serving pictures", diagram: [["Users", ""], ["Edge", "no CDN"], ["App servers", "busy with images", "hot"]],
-    explain: "A big share of requests are images, CSS and JavaScript. Those files never change between users, yet each one travels all the way to your app servers.",
-    q: "Where should static files be served from?", options: [["A CDN at the edge", true, "Yes. A CDN keeps copies close to users. Your app never sees those requests and pages load faster."], ["The database", false, "Databases are for data, and they are your most expensive part to scale."], ["A queue", false, "Queues are for work that can wait. Images are needed now."]] },
-  heavy: { deeper: "Queued jobs can run twice. Make them safe to repeat, and send jobs that keep failing to a separate queue for review.", title: "Users wait for work they do not need", diagram: [["Checkout", ""], ["App server", "sends email, resizes photos", "hot"], ["User", "waits ~1 s", "hot"]],
-    explain: "Checkout sends an email and resizes photos before it answers. The user does not need any of that to see 'order placed', but they wait for all of it, and it keeps servers busy.",
-    q: "How do you make checkout fast again?", options: [["Queue + workers", true, "Yes. Put the slow jobs in a queue, answer the user at once, and let workers do the jobs in the background."], ["Faster app servers", false, "The work is still in the request. Users still wait."], ["A cache", false, "Each checkout is different. There is nothing to reuse."]] },
-  qnow: { deeper: "Watch the age of the oldest job, not just the count. Add workers based on it.", title: "A queue with nobody reading it", diagram: [["App", ""], ["Queue", "jobs piling up", "hot"], ["Workers", "none", "down"]],
-    explain: "The queue holds jobs until something takes them out. With no workers, emails never go out and the queue fills until it rejects new jobs.",
-    q: "What is missing?", options: [["Workers", true, "Yes. Workers take jobs from the queue and run them. Add enough to keep up with how fast jobs arrive."], ["A second queue", false, "Two queues with no workers just fill up twice."], ["A load balancer", false, "Workers pull from the queue; they do not need a load balancer."]] },
-  deploy: { deeper: "Roll back first, find the cause second. Database changes need two steps (add the new, then remove the old) so the old version keeps working.", title: "Errors started with the release", diagram: [["Release v2.5", "just went out", "hot"], ["All app servers", "9% of requests fail", "hot"], ["Users", "see errors", "hot"]],
+    q: "What is the cheapest fix?", options: [["Rate limiter at the edge", true, "Yes. It blocks clients that send far too many requests, before they reach your servers, for about $1 an hour."], ["Many more app servers", false, "You would pay to serve bots, and they can always send more."], ["A CDN", false, "A CDN serves static files. Bots hit your dynamic pages, so they still get through."]] } },
+  { key: "deploy",
+    when: (m, apps, r) => r && r.kind === "bug" && r.share >= 1 && !r.rollbackLeft,
+    text: (m, apps, r) => "Errors jumped the moment the new version went out. Nothing else changed.",
+    fix: "Press the red <b>Roll back release</b> button at the top. Next time, add <b>Canary deploys</b> first.",
+    teach: { deeper: "Roll back first, find the cause second. Database changes need two steps (add the new, then remove the old) so the old version keeps working.", title: "Errors started with the release", diagram: [["Release v2.5", "just went out", "hot"], ["All app servers", "9% of requests fail", "hot"], ["Users", "see errors", "hot"]],
     explain: "Nothing else changed: traffic is normal, servers are not busy. Errors jumped the second the new version went out. The change is the most likely cause.",
-    q: "What do you do first?", options: [["Roll back the release", true, "Yes. Restore service first, debug later. Next time, a canary would limit the damage to 10% of users."], ["Add more app servers", false, "More servers run the same broken code. Errors stay the same."], ["Restart the database", false, "The database is fine. Changing healthy parts during an incident makes things worse."]] },
-  leak: { deeper: "Alert on the trend, such as memory climbing after a release, not only on crashes.", title: "Capacity falls a little every second", diagram: [["Release v3.0", "", "hot"], ["App servers", "memory grows", "hot"], ["OOMKilled", "restart", "down"]],
+    q: "What do you do first?", options: [["Roll back the release", true, "Yes. Restore service first, debug later. Next time, a canary would limit the damage to 10% of users."], ["Add more app servers", false, "More servers run the same broken code. Errors stay the same."], ["Restart the database", false, "The database is fine. Changing healthy parts during an incident makes things worse."]] } },
+  { key: "leak",
+    when: (m, apps, r) => r && r.kind === "leak" && r.share >= 1 && !r.rollbackLeft && r.age > 8,
+    text: (m, apps, r) => `App servers have lost ${Math.round((1 - m.health) * 100)}% of their speed since the release, and it keeps falling.`,
+    fix: "Press the red <b>Roll back release</b> button at the top.",
+    teach: { deeper: "Alert on the trend, such as memory climbing after a release, not only on crashes.", title: "Capacity falls a little every second", diagram: [["Release v3.0", "", "hot"], ["App servers", "memory grows", "hot"], ["OOMKilled", "restart", "down"]],
     explain: "Since version 3.0, every server gets slower as its memory fills. When memory runs out, the system kills the server and it restarts, clean, and the cycle starts again.",
-    q: "What fixes the cause?", options: [["Roll back to the old version", true, "Yes. The leak is in the new code. Roll back now, then find the leak with a memory profile."], ["Add more servers", false, "More leaking servers. They all fill up and get killed too."], ["Restart servers on a timer", false, "That hides the leak and causes regular blips. It is a plaster, not a fix."]] },
-  dbdown: { deeper: "A failover is only as good as your last test of it. Practise it, and make sure the app reconnects quickly.", title: "The primary database is gone", diagram: [["App servers", ""], ["Primary DB", "dead", "down"], ["Standby", "none", "down"]],
+    q: "What fixes the cause?", options: [["Roll back to the old version", true, "Yes. The leak is in the new code. Roll back now, then find the leak with a memory profile."], ["Add more servers", false, "More leaking servers. They all fill up and get killed too."], ["Restart servers on a timer", false, "That hides the leak and causes regular blips. It is a plaster, not a fix."]] } },
+  { key: "dbdown",
+    when: (m, apps, r) => !m.dbUp,
+    text: (m, apps, r) => "The primary database is down. Every write fails until it is back.",
+    fix: "Nothing to do but wait now. Next time, add a <b>Standby DB</b> before it happens.",
+    teach: { deeper: "A failover is only as good as your last test of it. Practise it, and make sure the app reconnects quickly.", title: "The primary database is gone", diagram: [["App servers", ""], ["Primary DB", "dead", "down"], ["Standby", "none", "down"]],
     explain: "Every write (orders, sign-ups, carts) needs the primary. Replicas and the cache can still answer some reads, but nothing can be saved until a primary is back.",
-    q: "What would have made this a short blip?", options: [["A standby database ready to take over", true, "Yes. A standby in another zone is promoted in seconds. In AWS this is RDS Multi-AZ."], ["More read replicas", false, "Replicas answer reads, but writes still need a primary."], ["A bigger cache", false, "A cache cannot save new orders."]] },
-  azdown: { deeper: "Spare capacity in every zone costs money every hour. Decide per service how much failure it must survive.", title: "A whole zone went dark", diagram: [["Load balancer", ""], ["Zone A servers", "gone", "down"], ["Zone B servers", "carrying everything", "hot"]],
+    q: "What would have made this a short blip?", options: [["A standby database ready to take over", true, "Yes. A standby in another zone is promoted in seconds. In AWS this is RDS Multi-AZ."], ["More read replicas", false, "Replicas answer reads, but writes still need a primary."], ["A bigger cache", false, "A cache cannot save new orders."]] } },
+  { key: "azdown",
+    when: (m, apps, r) => S.azDown > 0 && m.uA > 0.9,
+    text: (m, apps, r) => "Zone A is down and zone B cannot carry all the traffic.",
+    fix: "Add <b>App servers</b>. New ones go to zone B.",
+    teach: { deeper: "Spare capacity in every zone costs money every hour. Decide per service how much failure it must survive.", title: "A whole zone went dark", diagram: [["Load balancer", ""], ["Zone A servers", "gone", "down"], ["Zone B servers", "carrying everything", "hot"]],
     explain: "Zones are separate buildings with separate power. When one fails, every server in it disappears together. Whatever is left in zone B must carry all the traffic.",
-    q: "What protects you next time?", options: [["Enough spare servers in both zones", true, "Yes. Plan so one zone alone can carry peak traffic (N+1). An autoscaler helps replace lost servers."], ["All servers in one zone", false, "Then one power cut takes down everything."], ["A CDN", false, "A CDN helps static files, not your app servers."]] },
-  partner: { deeper: "Timeouts, retries that wait longer each time, and a fallback. Retrying too fast can knock a struggling partner over.", title: "Your servers are waiting on someone else", diagram: [["App servers", "stuck waiting", "hot"], ["Payment API", "8 s per call", "down"]],
+    q: "What protects you next time?", options: [["Enough spare servers in both zones", true, "Yes. Plan so one zone alone can carry peak traffic (N+1). An autoscaler helps replace lost servers."], ["All servers in one zone", false, "Then one power cut takes down everything."], ["A CDN", false, "A CDN helps static files, not your app servers."]] } },
+  { key: "partner",
+    when: (m, apps, r) => m.payStuck > 0,
+    text: (m, apps, r) => `Payment calls take 8 seconds and hold your servers while they wait. p95 is ${Math.round(m.p95)} ms.`,
+    fix: "Add <b>Timeouts + breaker</b> to the App servers column. A <b>Queue</b> and a <b>Worker</b> help even more.",
+    teach: { deeper: "Timeouts, retries that wait longer each time, and a fallback. Retrying too fast can knock a struggling partner over.", title: "Your servers are waiting on someone else", diagram: [["App servers", "stuck waiting", "hot"], ["Payment API", "8 s per call", "down"]],
     explain: "Each payment call holds a server busy until the partner answers. At 8 seconds each, a few calls a second fill every server, and normal pages fail too.",
-    q: "How do you stop their outage becoming yours?", options: [["Timeouts + circuit breaker (and a queue)", true, "Yes. Give up after 1 second, stop calling for a while, and queue payments to retry later."], ["Add many more app servers", false, "They also fill up with waiting calls. You cannot out-buy a slow dependency."], ["A CDN", false, "Payment calls are dynamic. A CDN cannot help."]] },
-};
+    q: "How do you stop their outage becoming yours?", options: [["Timeouts + circuit breaker (and a queue)", true, "Yes. Give up after 1 second, stop calling for a while, and queue payments to retry later."], ["Add many more app servers", false, "They also fill up with waiting calls. You cannot out-buy a slow dependency."], ["A CDN", false, "Payment calls are dynamic. A CDN cannot help."]] } },
+  { key: "static",
+    when: (m, apps, r) => m.tr.staticFrac >= 0.3 && !m.cdn && S.t > 8,
+    text: (m, apps, r) => `${Math.round(m.tr.staticFrac * 100)}% of requests are images, CSS and JS. Your app does not need to serve those.`,
+    fix: "Drag a <b>CDN</b> into the Edge column.",
+    teach: { deeper: "Put a version or hash in file names, so files can be cached for a year and a release still shows up at once.", title: "Your app is serving pictures", diagram: [["Users", ""], ["Edge", "no CDN"], ["App servers", "busy with images", "hot"]],
+    explain: "A big share of requests are images, CSS and JavaScript. Those files never change between users, yet each one travels all the way to your app servers.",
+    q: "Where should static files be served from?", options: [["A CDN at the edge", true, "Yes. A CDN keeps copies close to users. Your app never sees those requests and pages load faster."], ["The database", false, "Databases are for data, and they are your most expensive part to scale."], ["A queue", false, "Queues are for work that can wait. Images are needed now."]] } },
+  { key: "heavy",
+    when: (m, apps, r) => m.tr.heavyFrac > 0 && !m.queue && S.t > 6,
+    text: (m, apps, r) => `Checkout makes the user wait for emails and image resizing. p95 is ${Math.round(m.p95)} ms.`,
+    fix: "Add a <b>Queue</b> and some <b>Workers</b> to Background jobs.",
+    teach: { deeper: "Queued jobs can run twice. Make them safe to repeat, and send jobs that keep failing to a separate queue for review.", title: "Users wait for work they do not need", diagram: [["Checkout", ""], ["App server", "sends email, resizes photos", "hot"], ["User", "waits ~1 s", "hot"]],
+    explain: "Checkout sends an email and resizes photos before it answers. The user does not need any of that to see 'order placed', but they wait for all of it, and it keeps servers busy.",
+    q: "How do you make checkout fast again?", options: [["Queue + workers", true, "Yes. Put the slow jobs in a queue, answer the user at once, and let workers do the jobs in the background."], ["Faster app servers", false, "The work is still in the request. Users still wait."], ["A cache", false, "Each checkout is different. There is nothing to reuse."]] } },
+  { key: "qnow",
+    when: (m, apps, r) => m.queue && m.workers === 0 && S.backlog > 40,
+    text: (m, apps, r) => `${Math.round(S.backlog)} jobs are waiting in the queue, and nothing is taking them out.`,
+    fix: "Add <b>Workers</b> to Background jobs.",
+    teach: { deeper: "Watch the age of the oldest job, not just the count. Add workers based on it.", title: "A queue with nobody reading it", diagram: [["App", ""], ["Queue", "jobs piling up", "hot"], ["Workers", "none", "down"]],
+    explain: "The queue holds jobs until something takes them out. With no workers, emails never go out and the queue fills until it rejects new jobs.",
+    q: "What is missing?", options: [["Workers", true, "Yes. Workers take jobs from the queue and run them. Add enough to keep up with how fast jobs arrive."], ["A second queue", false, "Two queues with no workers just fill up twice."], ["A load balancer", false, "Workers pull from the queue; they do not need a load balancer."]] } },
+  { key: "qbig",
+    when: (m, apps, r) => m.queue && m.workers > 0 && S.backlog > 800,
+    text: (m, apps, r) => `The queue backlog is ${Math.round(S.backlog)} jobs and growing. The workers cannot keep up.`,
+    fix: "Add more <b>Workers</b>." },
+  { key: "dbhot",
+    when: (m, apps, r) => m.dbUp && m.uD > 0.9,
+    text: (m, apps, r) => `The database is at ${Math.round(m.uD * 100)}%. Most of its work is reads. What else can answer reads?`,
+    fix: "Add a <b>Cache</b>, or <b>Read replicas</b> in the Database column.",
+    teach: { deeper: "A cache brings a new problem: old data. Decide per kind of data how old a cached answer may be.", title: "The database is the bottleneck", diagram: [["App servers", ""], ["Primary DB", "over 90% busy", "hot"], ["Cache", "could help", "fix"]],
+    explain: "Almost every page reads from the database. When thousands of people read the same product pages, the database answers the same question again and again.",
+    q: "What takes repeated reads off the database?", options: [["A cache (or read replicas)", true, "Yes. A cache remembers answers to common reads. Replicas also share reads. Writes still go to the primary."], ["More app servers", false, "More app servers send even more queries to the database."], ["A rate limiter", false, "These are real customers. Blocking them is not a fix."]] } },
+  { key: "apphot",
+    when: (m, apps, r) => m.uA > 0.92 && !r && S.azDown <= 0,
+    text: (m, apps, r) => `App servers are at ${Math.round(m.uA * 100)}% load. They need help.`,
+    fix: "Add <b>App servers</b>, or an <b>Autoscaler</b>.",
+    teach: { deeper: "Scaling out only works if servers share nothing: no sessions in memory, no local files, no sticky routing.", title: "The app servers are full", diagram: [["Users", ""], ["Load balancer", ""], ["App servers", "over 90% busy", "hot"], ["Database", ""]],
+    explain: "Each server can only answer so many requests a second. Near 100% busy, requests wait in line, so response time shoots up. Past 100%, requests start to fail.",
+    q: "What is the quickest fix here?", options: [["Add app servers (or an autoscaler)", true, "Yes. App code that keeps no data can scale out: more copies, each taking a share."], ["Add a read replica", false, "Replicas help the database. The bottleneck right now is the app servers."], ["Remove the cache", false, "That would send more work to the database and make things worse."]] } },
+  { key: "autolb",
+    when: (m, apps, r) => has("auto") && !m.lb,
+    text: (m, apps, r) => "The autoscaler is adding servers, but nothing sends them traffic.",
+    fix: "Drag a <b>Load balancer</b> into the Entry column." },
+];
+const problem = key => PROBLEMS.find(p => p.key === key);
 
 /* ================================================================== state */
-const $ = s => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 let stars = store.get("loadrush-stars", {});
@@ -553,9 +611,7 @@ let role = store.get("loadrush-role", "mid");
 const ROLES = { mid: { name: "Mid-level", wait: 5, desc: "Hints appear in the pager after 5 seconds. Plain explanations." },
   staff: { name: "Staff", wait: 10, desc: "Hints wait 10 seconds. After each shift: trade-off questions to discuss." },
   principal: { name: "Principal", wait: Infinity, desc: "No hints. After each shift: trade-off and organisation questions." } };
-let L = null, S = null, armed = null, inspected = "app";
-const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
+let L = null, S = null;
 function newState() {
   return { t: 0, pieces: [], nextId: 1, budget: 100, speed: 1, running: false, over: false, warm: 0, backlog: 0,
     autoTick: 0, hist: { rps: [], bots: [], p95: [], err: [] }, m: null, tipHeld: {}, tipsShown: {}, fired: {},
@@ -639,7 +695,7 @@ function step(dt) {
   S.t += dt;
   const tr = L.traffic(S.t);
   for (const p of S.pieces) if (p.bootLeft > 0) p.bootLeft = Math.max(0, p.bootLeft - dt);
-  for (const e of L.events) if (!S.fired[e.t] && S.t >= e.t) { S.fired[e.t] = true; fire(e.kind, e.text); }
+  L.events.forEach((e, i) => { if (!S.fired[i] && S.t >= e.t) { S.fired[i] = true; fire(e.kind, e.text); } });
   tickIncidents(dt);
 
   const lb = has("lb"), nApp = ready("app").length, cdn = has("cdn"), waf = has("waf"), cache = has("cache");
@@ -757,81 +813,23 @@ function autoscale(dt, uA, nApp) {
   }
 }
 
-const FIX = {
-  nolb: "Drag a <b>Load balancer</b> into the Entry column.",
-  bots: "Drag a <b>Rate limiter</b> into the Edge column.",
-  deploy: "Press the red <b>Roll back release</b> button at the top. Next time, add <b>Canary deploys</b> first.",
-  leak: "Press the red <b>Roll back release</b> button at the top.",
-  dbdown: "Nothing to do but wait now. Next time, add a <b>Standby DB</b> before it happens.",
-  azdown: "Add <b>App servers</b>. New ones go to building B.",
-  partner: "Add <b>Timeouts + breaker</b> to the App servers column. A <b>Queue</b> and a <b>Worker</b> help even more.",
-  static: "Drag a <b>CDN</b> into the Edge column.",
-  heavy: "Add a <b>Queue</b> and some <b>Workers</b> to Background jobs.",
-  qnow: "Add <b>Workers</b> to Background jobs.",
-  qbig: "Add more <b>Workers</b>.",
-  dbhot: "Add a <b>Cache</b>, or <b>Read replicas</b> in the Database column.",
-  apphot: "Add <b>App servers</b>, or an <b>Autoscaler</b>.",
-  autolb: "Drag a <b>Load balancer</b> into the Entry column.",
-};
-let guideKey = "";
-function updateGuide() {
-  if (!S || !L) return;
-  let cls = "", icon = "▶", title = "What to do now", text = "";
-  const started = S.t > 0.05;
-  if (S.over) { cls = S.budget > 0 ? "ok" : "bad"; icon = S.budget > 0 ? "✓" : "✕"; title = S.budget > 0 ? "Shift complete" : "The site went down"; text = "Open the Menu to try again or pick the next shift."; }
-  else if (!S.running && !started) { title = "Get ready"; text = L.sandbox ? "Move the sliders on the left and watch what changes." : (role === "mid" ? (L.watch || L.task) : L.task) + (role === "mid" ? "" : " Then press ▶ Start shift."); }
-  else if (!S.running) { title = "Paused"; text = "Press ▶ Resume when you are ready. You can add parts while paused."; }
-  else {
-    const prob = (S.problems || [])[0];
-    if (!prob) { cls = "ok"; icon = "✓"; title = "All good"; text = "Visitors are getting fast pages. Keep watching for changes."; }
-    else {
-      cls = S.budget < 40 ? "bad" : "warn"; icon = "!"; title = prob[1];
-      text = role === "mid" ? (FIX[prob[0]] || "") : role === "staff" ? "What would you change? Click a column to see its numbers." : "Site health is dropping. Find out why.";
-    }
-  }
-  const key = cls + title + text; if (key === guideKey) return; guideKey = key;
-  const g = $("#guide"); g.className = "guide " + cls;
-  $("#gicon").textContent = icon; $("#gtitle").textContent = title; $("#gtext").innerHTML = text;
-  const pz = $("#paused"); pz.hidden = S.running || S.over;
-  $("#pausedText").textContent = started ? "Press ▶ Resume to carry on." : "Add parts if you want, then press ▶ Start shift.";
-  $("#play").classList.toggle("ready", !S.running && !S.over);
-}
 function coach(dt) {
   const m = S.m, apps = count("app"), r = S.release;
-  const tips = [
-    ["nolb", apps >= 2 && !m.lb, `You have ${apps} app servers, but only one is getting requests. Something has to spread the requests across them.`],
-    ["bots", m.bots > 300 && !m.waf, `${Math.round(m.bots)} requests a second come from a few IP addresses. These are not customers.`],
-    ["deploy", r && r.kind === "bug" && r.share >= 1 && !r.rollbackLeft, "Errors jumped the moment the new version went out. Nothing else changed."],
-    ["leak", r && r.kind === "leak" && r.share >= 1 && !r.rollbackLeft && r.age > 8, `App servers have lost ${Math.round((1 - m.health) * 100)}% of their speed since the release, and it keeps falling.`],
-    ["dbdown", !m.dbUp, "The primary database is down. Every write fails until it is back."],
-    ["azdown", S.azDown > 0 && m.uA > 0.9, "Zone A is down and zone B cannot carry all the traffic."],
-    ["partner", m.payStuck > 0, `Payment calls take 8 seconds and hold your servers while they wait. p95 is ${Math.round(m.p95)} ms.`],
-    ["static", m.tr.staticFrac >= 0.3 && !m.cdn && S.t > 8, `${Math.round(m.tr.staticFrac * 100)}% of requests are images, CSS and JS. Your app does not need to serve those.`],
-    ["heavy", m.tr.heavyFrac > 0 && !m.queue && S.t > 6, `Checkout makes the user wait for emails and image resizing. p95 is ${Math.round(m.p95)} ms.`],
-    ["qnow", m.queue && m.workers === 0 && S.backlog > 40, `${Math.round(S.backlog)} jobs are waiting in the queue, and nothing is taking them out.`],
-    ["qbig", m.queue && m.workers > 0 && S.backlog > 800, `The queue backlog is ${Math.round(S.backlog)} jobs and growing. The workers cannot keep up.`],
-    ["dbhot", m.dbUp && m.uD > 0.9, `The database is at ${Math.round(m.uD * 100)}%. Most of its work is reads. What else can answer reads?`],
-    ["apphot", m.uA > 0.92 && !r && S.azDown <= 0, `App servers are at ${Math.round(m.uA * 100)}% load. They need help.`],
-    ["autolb", has("auto") && !m.lb, "The autoscaler is adding servers, but nothing sends them traffic."],
-  ];
   const wait = teachOn ? 2 : ROLES[role].wait;
-  S.problems = tips.filter(([k, cond]) => cond && (S.tipHeld[k] || 0) > 1).map(([k, , text]) => [k, text]);
-  for (const [k, cond, text] of tips) {
-    S.tipHeld[k] = cond ? (S.tipHeld[k] || 0) + dt : 0;
-    if (S.tipHeld[k] > wait && !S.tipsShown[k]) {
-      S.tipsShown[k] = 1; log("coach", text);
-      if (teachOn && TEACH[k] && !S.taught[k]) { S.taught[k] = 1; teach(k); return; }
+  const now = PROBLEMS.filter(p => p.when(m, apps, r));
+  S.problems = now.filter(p => (S.tipHeld[p.key] || 0) > 1).map(p => [p.key, p.text(m, apps, r)]);
+  let toTeach = null;
+  for (const p of PROBLEMS) {
+    const on = now.includes(p);
+    S.tipHeld[p.key] = on ? (S.tipHeld[p.key] || 0) + dt : 0;
+    if (S.tipHeld[p.key] > wait && !S.tipsShown[p.key]) {
+      S.tipsShown[p.key] = 1; log("coach", p.text(m, apps, r));
+      if (teachOn && p.teach && !S.taught[p.key] && !toTeach) { S.taught[p.key] = 1; toTeach = p.key; }
     }
   }
+  if (toTeach) teach(toTeach);
 }
 
-function killPiece(id) {
-  const el = document.querySelector(`.chip[data-id="${id}"]`);
-  S.pieces = S.pieces.filter(p => p.id !== id);
-  if (el) { el.classList.add("dead"); setTimeout(renderBoard, 600); } else renderBoard();
-}
-
-/* ================================================================== placing parts */
 function place(type, zone) {
   if (!S || S.over) return false;
   const part = PARTS[type];
@@ -895,6 +893,61 @@ function inspector(z, m) {
       note: "Real teams agree a target (an SLO), like 99% of requests OK. The budget is how much failure is allowed. When it runs out, new features stop and reliability work starts." };
   }
 }
+/* What the bar above the board says. Pure: depends only on the game state, the shift and the role. */
+function guideFor(S, L, role) {
+  let cls = "", icon = "▶", title = "What to do now", text = "";
+  const started = S.t > 0.05;
+  if (S.over) { cls = S.budget > 0 ? "ok" : "bad"; icon = S.budget > 0 ? "✓" : "✕"; title = S.budget > 0 ? "Shift complete" : "The site went down"; text = "Open the Menu to try again or pick the next shift."; }
+  else if (!S.running && !started) { title = "Get ready"; text = L.sandbox ? "Move the sliders on the left and watch what changes." : (role === "mid" ? (L.watch || L.task) : L.task) + (role === "mid" ? "" : " Then press ▶ Start shift."); }
+  else if (!S.running) { title = "Paused"; text = "Press ▶ Resume when you are ready. You can add parts while paused."; }
+  else {
+    const prob = (S.problems || [])[0];
+    if (!prob) { cls = "ok"; icon = "✓"; title = "All good"; text = "Visitors are getting fast pages. Keep watching for changes."; }
+    else {
+      cls = S.budget < 40 ? "bad" : "warn"; icon = "!"; title = prob[1];
+      text = role === "mid" ? (problem(prob[0]) || {}).fix || "" : role === "staff" ? "What would you change? Click a column to see its numbers." : "Site health is dropping. Find out why.";
+    }
+  }
+  return { cls, icon, title, text, started };
+}
+/* Which columns the board shows for a shift: only the ones its parts can go in. Pure. */
+function zoneLayout(L, pieces) {
+  const used = z => z === "users" || L.tray.some(t => PARTS[t].zone === z) || pieces.some(p => PARTS[p.type].zone === z);
+  const cols = [["users", "86px"], ["edge", "1fr"], ["entry", "1fr"], ["app", "1.3fr"], ["mid", "1.15fr"], ["data", "1.15fr"]];
+  const shown = cols.filter(([z]) => z === "mid" ? used("cache") || used("jobs") : used(z));
+  const both = used("cache") && used("jobs");
+  const zones = {};
+  for (const id of ["users", "edge", "entry", "app", "cache", "jobs", "data"]) {
+    const ci = shown.findIndex(c => c[0] === (id === "cache" || id === "jobs" ? "mid" : id));
+    zones[id] = ci < 0 || !used(id) ? null : { col: ci + 1, row: id === "cache" && both ? "1" : id === "jobs" && both ? "2" : "1 / 3" };
+  }
+  return { columns: shown.map(c => c[1]).join(" "), zones };
+}
+</script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+let armed = null, inspected = "app";
+const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+let guideKey = "";
+function updateGuide() {
+  if (!S || !L) return;
+  const { cls, icon, title, text, started } = guideFor(S, L, role);
+  const key = cls + title + text; if (key === guideKey) return; guideKey = key;
+  const g = $("#guide"); g.className = "guide " + cls;
+  $("#gicon").textContent = icon; $("#gtitle").textContent = title; $("#gtext").innerHTML = text;
+  const pz = $("#paused"); pz.hidden = S.running || S.over;
+  $("#pausedText").textContent = started ? "Press ▶ Resume to carry on." : "Add parts if you want, then press ▶ Start shift.";
+  $("#play").classList.toggle("ready", !S.running && !S.over);
+}
+function killPiece(id) {
+  const el = document.querySelector(`.chip[data-id="${id}"]`);
+  S.pieces = S.pieces.filter(p => p.id !== id);
+  if (el) { el.classList.add("dead"); setTimeout(renderBoard, 600); } else renderBoard();
+}
+
+/* ================================================================== placing parts */
 function renderInspector() {
   if (!S || !S.m) return;
   if (document.querySelector(`.zone[data-z="${inspected}"]`)?.hidden) inspected = "budget";
@@ -906,18 +959,12 @@ function inspect(z) { inspected = z; renderInspector(); }
 
 /* ================================================================== drawing */
 function layoutZones() {
-  const used = z => z === "users" || L.tray.some(t => PARTS[t].zone === z) || S.pieces.some(p => PARTS[p.type].zone === z);
-  const cols = [["users", "86px"], ["edge", "1fr"], ["entry", "1fr"], ["app", "1.3fr"], ["mid", "1.15fr"], ["data", "1.15fr"]];
-  const shown = cols.filter(([z]) => z === "mid" ? used("cache") || used("jobs") : used(z));
-  $("#board").style.gridTemplateColumns = shown.map(c => c[1]).join(" ");
+  const lay = zoneLayout(L, S.pieces);
+  $("#board").style.gridTemplateColumns = lay.columns;
   for (const z of document.querySelectorAll(".zone[data-z]")) {
-    const id = z.dataset.z, colKey = id === "cache" || id === "jobs" ? "mid" : id;
-    const ci = shown.findIndex(c => c[0] === colKey);
-    z.hidden = ci < 0 || !used(id);
-    if (z.hidden) continue;
-    z.style.gridColumn = String(ci + 1);
-    const both = used("cache") && used("jobs");
-    z.style.gridRow = id === "cache" && both ? "1" : id === "jobs" && both ? "2" : "1 / 3";
+    const spot = lay.zones[z.dataset.z];
+    z.hidden = !spot;
+    if (spot) { z.style.gridColumn = String(spot.col); z.style.gridRow = spot.row; }
   }
 }
 function renderTray() {
@@ -1125,7 +1172,7 @@ function diagramSvg(nodes) {
   return s + "</svg>";
 }
 function teach(key) {
-  const c = TEACH[key]; if (!c) return;
+  const c = (problem(key) || {}).teach; if (!c) return;
   setRunning(false);
   $("#sheet").innerHTML = `
     <div class="kick teach">Teach mode · the game is paused</div>
