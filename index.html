@@ -1,0 +1,1226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Load Rush: a real-time DevOps game. Drag load balancers, caches, queues and more onto a live system and keep it up.">
+<style>[hidden]{display:none!important} body{margin:0}</style>
+</head>
+<body>
+<title>Load Rush</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a night-shift control room. Header bar, then three columns: parts tray | live system board | monitors, inspector and pager. */
+:root {
+  color-scheme: dark;
+  --ground: #0a1216; --panel: #101c22; --panel-2: #15252d; --line: #22363f; --line-2: #2e4752;
+  --ink: #d9e6ea; --ink-dim: #86a0a9; --ink-faint: #56707a;
+  --signal: #4fc8e8;      /* legit traffic + accent */
+  --bot: #c77dff;         /* bot traffic */
+  --ok: #43d39a; --warn: #f2b33d; --bad: #ff5c5c;
+  --display: "Chakra Petch", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--ground); color: var(--ink); font: 14px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 24px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--ground); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, .card:focus-visible, .zone:focus-visible, input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* header */
+header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; background: var(--ground);
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 14px; border-bottom: 1px solid var(--line); }
+.brand { font: 700 22px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; }
+.brand b { color: var(--signal); }
+.lvname { font: 500 15px var(--display); color: var(--ink-dim); letter-spacing: .04em; }
+.hstats { display: flex; gap: 18px; margin-left: auto; align-items: center; flex-wrap: wrap; }
+.hstat { display: flex; flex-direction: column; line-height: 1.15; }
+.hstat small { font: 500 10px var(--mono); letter-spacing: .12em; color: var(--ink-faint); text-transform: uppercase; }
+.hstat span { font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
+.ctrl { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line-2); background: var(--panel-2); padding: 7px 12px; border-radius: 6px; font-weight: 600; font-size: 13px; }
+.btn:hover { border-color: var(--ink-faint); }
+.btn.go { background: var(--signal); border-color: var(--signal); color: #04212b; }
+.btn.on { border-color: var(--signal); color: var(--signal); }
+.btn.danger { background: var(--bad); border-color: var(--bad); color: #2a0606; animation: pulse 1.2s infinite; }
+.btn:disabled { opacity: .55; cursor: wait; animation: none; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 30%, transparent); } }
+
+/* stage */
+.stage { display: grid; grid-template-columns: 200px minmax(0, 1fr) 300px; gap: 16px; margin-top: 16px; }
+@media (max-width: 1180px) { .stage { grid-template-columns: 190px minmax(0, 1fr); } .monitors { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); } }
+@media (max-width: 760px) { .stage { grid-template-columns: minmax(0, 1fr); } .tray { flex-direction: row; overflow-x: auto; } .tray .card { min-width: 150px; } }
+.label { font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); }
+
+/* parts tray */
+.tray { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card { display: grid; grid-template-columns: 34px 1fr; gap: 2px 10px; align-items: center; padding: 8px 10px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--line); cursor: grab; touch-action: none; user-select: none; text-align: left; }
+.card:hover { border-color: var(--line-2); background: var(--panel-2); }
+.card.armed { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal) inset; }
+.card.new::after { content: "NEW"; grid-column: 2; font: 600 9px var(--mono); color: var(--warn); letter-spacing: .1em; }
+.tag { grid-row: span 2; width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
+  font: 700 12px var(--display); letter-spacing: .03em; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--signal); }
+.card .nm { font-weight: 600; font-size: 13px; }
+.card .meta { font: 11px var(--mono); color: var(--ink-dim); }
+.tray-note { font-size: 12px; color: var(--ink-faint); margin-top: 4px; }
+
+/* sandbox controls */
+.sandbox { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.sl { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; font-size: 12px; }
+.sl b { font: 500 12px var(--mono); color: var(--signal); }
+.sl input { grid-column: 1 / -1; width: 100%; accent-color: var(--signal); }
+.evbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.evbtns .btn { font-size: 11.5px; padding: 6px 6px; }
+
+/* board */
+.board-wrap { align-self: start; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background:
+  radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 22px 22px, var(--panel); }
+.board { position: relative; min-width: 780px; height: 480px; display: grid; grid-template-columns: 74px 1fr 1fr 1.3fr 1.2fr 1.2fr;
+  grid-template-rows: 1fr 1fr; gap: 14px; padding: 18px; }
+#flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.zone { position: relative; z-index: 1; border: 1px dashed var(--line-2); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  background: color-mix(in srgb, var(--ground) 55%, transparent); min-width: 0; cursor: pointer; }
+.zone[data-z="users"] { grid-column: 1; grid-row: 1 / 3; }
+.zone[data-z="edge"]  { grid-column: 2; grid-row: 1 / 3; }
+.zone[data-z="entry"] { grid-column: 3; grid-row: 1 / 3; }
+.zone[data-z="app"]   { grid-column: 4; grid-row: 1 / 3; }
+.zone[data-z="cache"] { grid-column: 5; grid-row: 1; }
+.zone[data-z="jobs"]  { grid-column: 5; grid-row: 2; }
+.zone[data-z="data"]  { grid-column: 6; grid-row: 1 / 3; }
+.zone.need { border-color: var(--warn); border-style: dashed; }
+.zone.need .zhead::after { content: "missing piece?"; font: 10px var(--mono); color: var(--warn); margin-left: auto; }
+.zone.inspected { box-shadow: 0 0 0 2px var(--signal); }
+.zone.drop-ok { border: 1px solid var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.zone.drop-bad { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.zone.alarm { border: 1px solid var(--bad); }
+.zhead { display: flex; align-items: center; gap: 6px; }
+.zname { font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); }
+.load { margin-top: auto; }
+.load .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.load .bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .25s, background .25s; }
+.load .txt { font: 11px var(--mono); color: var(--ink-dim); display: flex; justify-content: space-between; margin-top: 3px; font-variant-numeric: tabular-nums; gap: 6px; }
+.users { align-items: center; justify-content: center; text-align: center; border-style: solid; }
+.users .big { font: 700 20px var(--display); color: var(--signal); }
+.users .small { font: 10px var(--mono); color: var(--ink-dim); }
+.users .botc { color: var(--bot); }
+.chips { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.chip { position: relative; display: flex; align-items: center; gap: 7px; padding: 5px 22px 5px 6px; border-radius: 6px; font: 500 11.5px var(--body);
+  background: var(--panel-2); border: 1px solid var(--line-2); overflow: hidden; min-width: 0; line-height: 1.2; }
+.chip .n { min-width: 0; }
+.chip .t { flex: none; min-width: 30px; text-align: center; font: 11px var(--display); padding: 1px 4px; border-radius: 4px; background: var(--ground); color: var(--signal); }
+.chip .az { margin-left: auto; font: 600 9.5px var(--mono); color: var(--ink-faint); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 3px; }
+.chip.fixed { padding-right: 8px; }
+.chip.boot { color: var(--ink-faint); } .chip.boot .t { color: var(--ink-faint); }
+.chip.down { border-color: var(--bad); color: var(--bad); } .chip.down .t { color: var(--bad); }
+.chip.newver .t { color: var(--warn); }
+.chip .pb { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--warn); }
+.chip .x { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--ink-faint); font-size: 13px; padding: 0 4px; }
+.chip .x:hover { color: var(--bad); }
+.chip.auto { border-style: dashed; }
+.chip.dead { animation: die .6s forwards; }
+@keyframes die { to { opacity: 0; transform: scale(.6); } }
+
+/* monitors */
+.monitors { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.mon { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.mon.click { cursor: pointer; } .mon.click:hover { border-color: var(--line-2); }
+.mon .row { display: flex; justify-content: space-between; align-items: baseline; }
+.mon .val { font: 500 20px var(--mono); font-variant-numeric: tabular-nums; }
+.mon canvas { width: 100%; height: 40px; display: block; margin-top: 4px; }
+.budget .bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.budget .bar i { display: block; height: 100%; background: var(--ok); transition: width .3s, background .3s; }
+.slo { font: 11px var(--mono); color: var(--ink-faint); }
+.insp { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.insp .it { font: 600 13px var(--display); letter-spacing: .03em; margin-bottom: 2px; }
+.insp .ir { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12.5px; }
+.insp .ir b { font: 500 12.5px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.insp .ir.sum { border-top: 1px solid var(--line-2); padding-top: 3px; margin-top: 2px; }
+.insp .ir.sum b { color: var(--signal); }
+.insp .ir.badv b { color: var(--bad); }
+.insp .note { font-size: 12px; color: var(--ink-dim); line-height: 1.4; margin-top: 4px; }
+.pager { max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.msg { font-size: 12.5px; line-height: 1.4; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border-left: 3px solid var(--line-2); }
+.msg .when { font: 10px var(--mono); color: var(--ink-faint); margin-right: 6px; }
+.msg.page { border-left-color: var(--bad); } .msg.coach { border-left-color: var(--warn); } .msg.good { border-left-color: var(--ok); } .msg.info { border-left-color: var(--signal); }
+.msg .k { font: 600 10px var(--mono); letter-spacing: .08em; margin-right: 6px; }
+.msg.page .k { color: var(--bad); } .msg.coach .k { color: var(--warn); } .msg.good .k { color: var(--ok); } .msg.info .k { color: var(--signal); }
+
+/* overlays */
+.ov[hidden] { display: none; }
+.ov { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: color-mix(in srgb, var(--ground) 82%, transparent);
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.sheet { width: min(800px, 100%); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 26px 28px; }
+.sheet h2 { font: 700 30px/1.1 var(--display); margin: 4px 0 8px; text-wrap: balance; letter-spacing: .02em; }
+.sheet h3 { font: 700 16px var(--display); margin: 16px 0 6px; letter-spacing: .02em; }
+.sheet p { max-width: 66ch; color: var(--ink); }
+.sheet .kick { font: 500 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+.sheet .kick.teach { color: var(--warn); }
+.sheet ul { padding-left: 18px; margin: 8px 0; } .sheet li { margin: 4px 0; max-width: 66ch; }
+.sheet .acts { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
+.sheet .btn { padding: 10px 18px; font-size: 14px; }
+.levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
+.lv { text-align: left; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 10px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; }
+.lv:hover:not(:disabled) { border-color: var(--signal); }
+.lv:disabled { opacity: .45; cursor: not-allowed; }
+.lv.sand { border-style: dashed; }
+.lv .n { font: 500 10px var(--mono); letter-spacing: .12em; color: var(--ink-faint); }
+.lv .t { font: 700 16px var(--display); }
+.lv .d { font-size: 12px; color: var(--ink-dim); }
+.lv .s { font: 13px var(--mono); color: var(--warn); letter-spacing: .1em; }
+.howto { margin: 6px 0 4px; }
+.roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 6px 0 14px; }
+.role { text-align: left; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.role b { font: 700 15px var(--display); }
+.role span { font-size: 12px; color: var(--ink-dim); }
+.role.on { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal) inset; }
+.role:hover { border-color: var(--signal); }
+.sheet code { font: 12.5px var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+.switch { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
+.switch input { width: 18px; height: 18px; accent-color: var(--warn); }
+.switch small { font-weight: 400; color: var(--ink-dim); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 14px 0; }
+.stats div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+.stats small { display: block; font: 10px var(--mono); letter-spacing: .1em; color: var(--ink-faint); text-transform: uppercase; }
+.stats b { font: 500 18px var(--mono); font-variant-numeric: tabular-nums; }
+.stars { font: 700 28px var(--display); color: var(--warn); letter-spacing: .15em; }
+.real { font: 12px var(--mono); color: var(--ink-dim); }
+.real b { color: var(--signal); font-weight: 500; }
+.diagram { overflow-x: auto; margin: 10px 0 4px; background: var(--ground); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.diagram svg { display: block; min-width: 520px; width: 100%; height: auto; }
+.dg rect { fill: var(--panel-2); stroke: var(--line-2); stroke-width: 1.5; }
+.dg.hot rect { stroke: var(--warn); } .dg.down rect { stroke: var(--bad); stroke-dasharray: 5 4; } .dg.fix rect { stroke: var(--ok); }
+.dg text { fill: var(--ink); font: 600 13px var(--body); }
+.dg .sub { fill: var(--ink-dim); font: 11px var(--mono); }
+.dg.hot .sub { fill: var(--warn); } .dg.down .sub { fill: var(--bad); } .dg.fix .sub { fill: var(--ok); }
+.arrow { stroke: var(--ink-faint); stroke-width: 1.5; fill: none; }
+.arrowhead { fill: var(--ink-faint); }
+.choices { display: grid; gap: 8px; margin-top: 8px; }
+.choice { text-align: left; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 10px; padding: 11px 14px; }
+.choice:hover:not(:disabled) { border-color: var(--warn); }
+.choice.right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel-2)); }
+.choice.wrong { border-color: var(--bad); }
+.choice:disabled { cursor: default; }
+.why { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--ok); max-width: 66ch; }
+.why.no { border-left-color: var(--bad); }
+.ghost { position: fixed; z-index: 30; pointer-events: none; transform: translate(-50%, -50%); padding: 6px 10px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--signal); font: 600 12px var(--mono); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 25; max-width: min(560px, calc(100% - 32px));
+  background: var(--panel-2); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 16px; font-size: 13.5px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<header>
+  <div class="brand">Load<b>Rush</b></div>
+  <div class="lvname" id="lvname">Choose a shift</div>
+  <div class="hstats">
+    <div class="hstat"><small>Shift clock</small><span id="clock">0:00 / 0:00</span></div>
+    <div class="hstat"><small>Spend</small><span id="spend">$0 / $0 an hour</span></div>
+    <div class="ctrl">
+      <button class="btn danger" id="rollback" hidden>Roll back release</button>
+      <button class="btn go" id="play">Start shift</button>
+      <button class="btn" id="speed" title="Game speed">1×</button>
+      <button class="btn" id="teachBtn" title="Pause and explain when something goes wrong">Teach: off</button>
+      <button class="btn" id="menu">Shifts</button>
+    </div>
+  </div>
+</header>
+
+<div class="stage">
+  <aside>
+    <div class="label" style="margin-bottom:8px">Parts. Drag onto the board</div>
+    <div class="tray" id="tray"></div>
+    <p class="tray-note">Or click a part, then a column. × removes a part. Click any column or chart to see its numbers.</p>
+    <div class="sandbox" id="sandbox" hidden>
+      <div class="label">Sandbox traffic</div>
+      <label class="sl" for="sbUsers">Real users a second <b id="sbUsersV"></b><input type="range" id="sbUsers" min="0" max="1500" step="10" value="300"></label>
+      <label class="sl" for="sbBots">Bots a second <b id="sbBotsV"></b><input type="range" id="sbBots" min="0" max="3000" step="50" value="0"></label>
+      <label class="sl" for="sbStatic">Images, CSS, JS <b id="sbStaticV"></b><input type="range" id="sbStatic" min="0" max="80" step="5" value="30"></label>
+      <label class="sl" for="sbReads">Reads (vs writes) <b id="sbReadsV"></b><input type="range" id="sbReads" min="50" max="95" step="5" value="85"></label>
+      <label class="sl" for="sbHeavy">Slow jobs (checkouts) <b id="sbHeavyV"></b><input type="range" id="sbHeavy" min="0" max="25" step="1" value="0"></label>
+      <label class="sl" for="sbPay">Payment calls <b id="sbPayV"></b><input type="range" id="sbPay" min="0" max="10" step="1" value="0"></label>
+      <div class="label" style="margin-top:4px">Break something</div>
+      <div class="evbtns">
+        <button class="btn" data-ev="crash">Crash a server</button>
+        <button class="btn" data-ev="deploy-bug">Bad release</button>
+        <button class="btn" data-ev="deploy-leak">Leaky release</button>
+        <button class="btn" data-ev="db-fail">Kill the DB</button>
+        <button class="btn" data-ev="az-fail">Zone A down</button>
+        <button class="btn" data-ev="partner-slow">Slow payments</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="board-wrap">
+    <div class="board" id="board">
+      <canvas id="flow"></canvas>
+      <div class="zone users" data-z="users">
+        <div class="big mono" id="uRps">0</div><div class="small">users/s</div>
+        <div class="small botc mono" id="uBots"></div>
+      </div>
+      <div class="zone" data-z="edge"><div class="zhead"><span class="zname">Edge</span></div><div class="chips"></div><div class="load"></div></div>
+      <div class="zone" data-z="entry"><div class="zhead"><span class="zname">Entry</span></div><div class="chips"></div><div class="load"></div></div>
+      <div class="zone" data-z="app"><div class="zhead"><span class="zname">App tier</span></div><div class="chips"></div><div class="load"></div></div>
+      <div class="zone" data-z="cache"><div class="zhead"><span class="zname">Cache</span></div><div class="chips"></div><div class="load"></div></div>
+      <div class="zone" data-z="jobs"><div class="zhead"><span class="zname">Background jobs</span></div><div class="chips"></div><div class="load"></div></div>
+      <div class="zone" data-z="data"><div class="zhead"><span class="zname">Database</span></div><div class="chips"></div><div class="load"></div></div>
+    </div>
+  </div>
+
+  <div class="monitors">
+    <div class="mon budget click" data-insp="budget">
+      <div class="row"><span class="label">Error budget</span><span class="val" id="budgetV">100%</span></div>
+      <div class="bar"><i id="budgetBar" style="width:100%"></i></div>
+      <div class="slo">Goal: under 1% errors and p95 under 800 ms.</div>
+    </div>
+    <div class="mon click" data-insp="users"><div class="row"><span class="label">Requests per second</span><span class="val" id="rpsV">0</span></div><canvas id="cRps"></canvas></div>
+    <div class="mon click" data-insp="p95"><div class="row"><span class="label">p95 response time</span><span class="val" id="p95V">0 ms</span></div><canvas id="cP95"></canvas></div>
+    <div class="mon click" data-insp="err"><div class="row"><span class="label">Errors</span><span class="val" id="errV">0.0%</span></div><canvas id="cErr"></canvas></div>
+    <div class="mon"><span class="label">Inspector · the numbers behind it</span><div class="insp" id="insp"></div></div>
+    <div class="mon"><span class="label">Pager</span><div class="pager" id="pager"></div></div>
+  </div>
+</div>
+
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ================================================================== parts */
+const PARTS = {
+  lb:      { name: "Load balancer", tag: "LB",  zone: "entry", cost: 2, boot: 2, max: 1, real: "AWS ALB, nginx, a Kubernetes Service",
+             what: "Spreads requests across every healthy app server. Without it, only one server gets traffic." },
+  app:     { name: "App server",    tag: "APP", zone: "app",   cost: 4, boot: 4, max: 9, real: "an EC2 instance, a Kubernetes Pod",
+             what: "Runs your code. Each one handles about 150 requests a second. New servers alternate between zone A and zone B." },
+  auto:    { name: "Autoscaler",    tag: "AS",  zone: "app",   cost: 0, boot: 1, max: 1, real: "EC2 Auto Scaling, Kubernetes HPA",
+             what: "Adds app servers when they are busy and removes extra ones when quiet. Stays inside your spend limit." },
+  canary:  { name: "Canary deploys", tag: "CY", zone: "app",   cost: 0, boot: 1, max: 1, real: "Argo Rollouts, CodeDeploy canary",
+             what: "New versions go to one server (about 10% of users) first. If errors or memory jump, it rolls back by itself." },
+  breaker: { name: "Timeouts + breaker", tag: "CB", zone: "app", cost: 0, boot: 1, max: 1, real: "a client timeout, resilience4j, Envoy outlier detection",
+             what: "Stops waiting on a slow outside service after 1 second, then stops calling it for a while. Requests fail fast instead of piling up." },
+  cache:   { name: "Cache",         tag: "C",   zone: "cache", cost: 3, boot: 3, max: 1, real: "Redis, ElastiCache",
+             what: "Keeps answers to common reads in memory. Once warm, about 75% of reads never reach the database." },
+  queue:   { name: "Queue",         tag: "Q",   zone: "jobs",  cost: 1, boot: 2, max: 1, real: "SQS, RabbitMQ",
+             what: "Slow jobs (emails, image resizing, payments to retry) wait here, so the user gets an answer right away. Needs workers." },
+  worker:  { name: "Worker",        tag: "W",   zone: "jobs",  cost: 2, boot: 3, max: 6, real: "an ECS task, a Kubernetes Deployment",
+             what: "Takes jobs from the queue and runs them in the background, about 15 jobs a second each." },
+  replica: { name: "Read replica",  tag: "RR",  zone: "data",  cost: 5, boot: 8, max: 4, real: "an RDS read replica",
+             what: "A copy of the database that answers reads (300/s each). Writes still go to the primary. Slow to start." },
+  standby: { name: "Standby DB",    tag: "SB",  zone: "data",  cost: 6, boot: 10, max: 1, real: "RDS Multi-AZ standby",
+             what: "A live copy of the primary in another zone. It answers nothing until the primary dies, then takes over in a few seconds." },
+  cdn:     { name: "CDN",           tag: "CDN", zone: "edge",  cost: 3, boot: 5, max: 1, real: "CloudFront, Cloudflare",
+             what: "Serves images, CSS and JS from servers near the user, so those requests never reach your app." },
+  waf:     { name: "Rate limiter",  tag: "RL",  zone: "edge",  cost: 1, boot: 1, max: 1, real: "AWS WAF rate rules, nginx limit_req",
+             what: "Blocks clients that send far too many requests, such as bots. Real users are not affected." },
+  db:      { name: "Primary DB",    tag: "DB",  zone: "data",  cost: 6, boot: 0, max: 1, real: "RDS PostgreSQL",
+             what: "Your one source of truth. Handles about 400 reads + writes a second." },
+};
+const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
+const APP_CAP = 150, DB_CAP = 400, REP_CAP = 300, WORKER_RATE = 15;
+const BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
+
+/* ================================================================== shifts */
+const ramp = (t, t0, t1, a, b) => t <= t0 ? a : t >= t1 ? b : a + (b - a) * (t - t0) / (t1 - t0);
+const wave = (t, start, end, peak, edge = 4) => t < start || t > end ? 0 : peak * Math.min(1, (t - start) / edge, (end - t) / edge);
+const T = (o) => Object.assign({ legit: 0, bots: 0, staticFrac: 0, readFrac: 0.85, heavyFrac: 0, payFrac: 0 }, o);
+
+const LEVELS = [
+  { id: "launch", staff: ["The app keeps nothing in memory between requests, so copies are interchangeable. What breaks if it kept user sessions in memory?", "How much spare capacity do you keep, and how do you decide? Spare capacity costs money every hour."], principal: ["Who decides what 'fast enough' means (the SLO), and how does that target change what teams build?", "Launch traffic is a guess. How do you set up a launch so a wrong guess is cheap?"],
+    name: "Launch Day", duration: 90, cap: 25,
+    blurb: "One server, rising traffic.",
+    brief: "Marketing just posted the launch. Traffic starts small and keeps climbing to about 340 users a second. Right now one app server does everything, and it handles about 150.",
+    task: "Keep the site up until the shift ends.",
+    given: ["app", "db"], tray: ["app", "lb", "cache"], fresh: ["app", "lb", "cache"],
+    traffic: t => T({ legit: ramp(t, 0, 80, 60, 340) }),
+    events: [{ t: 20, kind: "info", text: "Traffic is up 40% in 20 seconds. The launch post is spreading." }],
+    learned: ["One server has a hard limit. More servers only help if something spreads the requests: the load balancer.",
+              "Scaling out (more servers) is the normal fix for app code that keeps no data of its own.",
+              "Hands-on: run three copies of an app behind a Kubernetes Service (kind on a laptop is enough) and watch requests spread."] },
+  { id: "sale", staff: ["Cache or replicas? The cache is cheaper but can show old prices. When is old data not OK?", "The autoscaler reacts after load rises. When should you add capacity before the event instead?"], principal: ["Marketing knew about the sale; the people running the system did not. What process fixes that?", "Who pays for capacity that sits idle all year so you survive one sale day?"],
+    name: "Flash Sale", duration: 95, cap: 42,
+    blurb: "A 40-second spike of shoppers.",
+    brief: "At 0:25 an email goes out to every customer: 50% off for one hour. Expect about 700 users a second for 40 seconds, almost all of them reading product pages.",
+    task: "Survive the spike without burning your error budget.",
+    given: ["lb", "app", "app", "db"], tray: ["app", "lb", "auto", "cache", "replica"], fresh: ["auto", "replica"],
+    traffic: t => T({ legit: 200 + wave(t, 25, 68, 500, 6), readFrac: 0.9 }),
+    events: [{ t: 3, kind: "info", text: "Marketing: the sale email goes out at 0:25." }, { t: 25, kind: "page", text: "The sale email just went out." }],
+    learned: ["Reads that repeat (the same product page) are the best case for a cache.",
+              "Read replicas also take reads off the primary, but they take time to start. Plan ahead.",
+              "An autoscaler adds servers for you, but each new server needs a few seconds to boot.",
+              "Hands-on: set up a Kubernetes HPA with metrics-server, then load-test it."] },
+  { id: "bots", staff: ["A limit per IP address can block a whole office or mobile network that shares one address. What else can you limit by?", "What does the CDN keep, for how long, and how do you clear it after a release?"], principal: ["Is bot traffic an engineering, security or business problem? Who owns it?", "Build your own protection or pay a vendor? What would change your answer?"],
+    name: "Bot Swarm", duration: 100, cap: 40,
+    blurb: "Traffic jumps 8× but sales do not.",
+    brief: "Normal day, about 250 users a second, half of them loading images and CSS. Something odd is about to happen.",
+    task: "Keep real users happy. Do not just buy servers until it stops.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "cdn", "waf"], fresh: ["cdn", "waf"],
+    traffic: t => T({ legit: ramp(t, 60, 85, 250, 480), bots: wave(t, 18, 72, 2000, 3), staticFrac: 0.5 }),
+    events: [{ t: 19, kind: "page", text: "Requests per second up 800%. Sign-ups flat. Most requests come from 40 IP addresses." },
+             { t: 60, kind: "info", text: "A real news story about you is going up. Real traffic is rising now." }],
+    learned: ["Not all traffic is customers. A rate limiter blocks clients that send too much, at almost no cost.",
+              "Adding servers to absorb bots costs money and still loses.",
+              "Static files (images, CSS, JS) belong on a CDN. Your app should not spend time on them.",
+              "Hands-on: put nginx limit_req, or an AWS WAF rate rule, in front of a test app and hit it with a load tool."] },
+  { id: "checkout", staff: ["With a queue, an email may arrive late or twice. How do you make jobs safe to run twice?", "What happens to a job that fails five times? Where does it go, and who looks at it?"], principal: ["Moving work to a queue changes what 'order placed' promises the customer. Who agrees to that?", "How would you spot slow work inside requests before customers do?"],
+    name: "Checkout Crunch", duration: 100, cap: 40,
+    blurb: "Checkout does slow work while the user waits.",
+    brief: "Every checkout sends an email and resizes product photos before answering the user. Fine at night. Today 12-18% of requests are checkouts. Also, the server rack has been flaky.",
+    task: "Bring p95 under 800 ms and keep it there.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "cdn", "waf", "queue", "worker"], fresh: ["queue", "worker"],
+    traffic: t => T({ legit: ramp(t, 0, 70, 220, 320), staticFrac: 0.1, readFrac: 0.8, heavyFrac: ramp(t, 0, 60, 0.12, 0.18) }),
+    events: [{ t: 45, kind: "crash", text: "An app server crashed (hardware fault)." }],
+    learned: ["Slow work inside a request makes every user wait. Move it to a queue and answer right away.",
+              "Queues need workers. A queue with no workers just fills up.",
+              "With a load balancer and more than one server, a crash costs capacity, not the whole site.",
+              "Hands-on: create an SQS queue with a dead-letter queue in Terraform."] },
+  { id: "deploy", staff: ["What should a canary watch, and for how long, before the version goes to everyone?", "Some changes cannot be rolled back, like a database change. How do you release those safely?"], principal: ["Ban Friday releases, or make releases safe enough for any day?", "How do you measure release health across teams: how often you release, how often releases fail, how fast you recover?"],
+    name: "Friday Deploy", duration: 100, cap: 40,
+    blurb: "A release breaks checkout. Twice.",
+    brief: "The team is releasing version 2.5 at 0:25 and 2.6 at 1:10. Nobody ran the full test suite. If a release is bad, a red Roll back button appears at the top. Rolling back takes 5 seconds.",
+    task: "Keep errors low through two releases.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "canary"], fresh: ["canary"],
+    traffic: t => T({ legit: ramp(t, 0, 80, 260, 320) }),
+    events: [{ t: 25, kind: "deploy-bug", text: "Version 2.5 is out." }, { t: 70, kind: "deploy-bug", text: "Version 2.6 is out." }],
+    learned: ["Most outages start with a change. A fast rollback is the first fix, before any debugging.",
+              "A canary sends a new version to a small slice of users first, so a bad release hurts 10% for a few seconds instead of everyone.",
+              "Hands-on: break a Kubernetes Deployment on purpose and fix it with `kubectl rollout undo`."] },
+  { id: "leak", staff: ["Which graph would have shown this within minutes of the release? Who gets alerted?", "A memory limit makes the system kill a leaking process. Is that good or bad here?"], principal: ["Restarting servers on a timer hides the symptom. How do you stop teams living with fixes like that?", "What should the incident review produce so a leak like this is caught before release next time?"],
+    name: "Memory Leak", duration: 110, cap: 45,
+    blurb: "Servers slowly choke, then all restart at once.",
+    brief: "Version 3.0 goes out at 0:15. It keeps a little more memory every second and never gives it back. When a server runs out, the system kills it (OOMKilled) and it restarts.",
+    task: "Find the real cause and stop the restarts.",
+    given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "canary"], fresh: [],
+    traffic: t => T({ legit: 330 }),
+    events: [{ t: 15, kind: "deploy-leak", text: "Version 3.0 is out." }],
+    learned: ["Restarts and more servers hide a leak for a while. The fix is to roll back, then find the leak.",
+              "OOMKilled means the process used more memory than its limit. In Kubernetes you see it in `kubectl describe pod`.",
+              "Watch the trend, not the moment: capacity falling slowly after a release points straight at the release.",
+              "Hands-on: give a Pod a memory limit, push it over, and find OOMKilled in `kubectl describe pod`."] },
+  { id: "failover", staff: ["The standby takes over in seconds, but the app must reconnect. What in your app makes that fast or slow?", "When did you last test a failover for real? An untested standby is a hope, not a plan."], principal: ["How long can the business be down, and how much data can it lose? Who decides, and what does each step cost?", "Should you run planned failure tests in production?"],
+    name: "Failover Night", duration: 100, cap: 52,
+    blurb: "The main database dies.",
+    brief: "The primary database host has shown disk warnings all week. If it dies with no standby, restoring from backup takes about 40 seconds, and every write fails until then.",
+    task: "Be ready before it happens.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "standby"], fresh: ["standby"],
+    traffic: t => T({ legit: ramp(t, 0, 60, 260, 320), readFrac: 0.8 }),
+    events: [{ t: 8, kind: "info", text: "Disk warnings on the primary database host again." }, { t: 40, kind: "db-fail", text: "The primary database host died." }],
+    learned: ["A standby copy in another zone turns a long outage into a few seconds of failover.",
+              "Read replicas keep reads working, but writes need a primary. Replicas are not a backup plan for writes.",
+              "Backups are for lost data; standbys are for lost machines. You want both.",
+              "Hands-on: in Terraform, RDS Multi-AZ is one line: `multi_az = true`."] },
+  { id: "zone", staff: ["Spare capacity in both zones costs money. What is the cheapest setup that still survives losing a zone?", "Sometimes a whole region fails. When is a second region worth it?"], principal: ["Which systems must survive a whole region going down, and which can wait?", "How do you keep that list current as the business changes?"],
+    name: "Zone Outage", duration: 100, cap: 50,
+    blurb: "Half your servers vanish at once.",
+    brief: "AWS regions are split into zones, separate buildings with their own power. Your servers alternate between zone A and zone B (see the A/B tag). Today zone A has power problems.",
+    task: "Survive losing a whole zone for 40 seconds.",
+    given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica"], fresh: [],
+    traffic: t => T({ legit: ramp(t, 0, 30, 380, 450) }),
+    events: [{ t: 20, kind: "info", text: "AWS status page: increased error rates in zone A." }, { t: 40, kind: "az-fail", text: "Zone A is down." }],
+    learned: ["Spread servers across zones, and keep enough spare capacity that one zone can carry everything (N+1).",
+              "An autoscaler replaces lost servers, but only after they are gone and the new ones have booted.",
+              "Hands-on: build a VPC with subnets in two zones and spread an Auto Scaling group across both."] },
+  { id: "partner", staff: ["What is the right timeout? Too short fails good calls; too long ties up servers.", "Retries can make a struggling partner worse. How do waiting longer between retries, plus a little randomness, help?"], principal: ["What does the partner promise you, and what do you promise your own customers on top of it?", "Should a critical partner have a backup provider? What does that cost to keep ready?"],
+    name: "Slow Partner", duration: 100, cap: 45,
+    blurb: "The payment provider hangs.",
+    brief: "6% of requests call an outside payment API. At 0:30 it starts taking 8 seconds to answer. Every app server waits on those calls, and the waiting fills them up.",
+    task: "Do not let someone else's outage become yours.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "queue", "worker", "breaker"], fresh: ["breaker"],
+    traffic: t => T({ legit: 300, payFrac: 0.06 }),
+    events: [{ t: 30, kind: "partner-slow", text: "The payment provider now takes 8 seconds to answer." }],
+    learned: ["Every call to another service needs a timeout. Without one, a slow partner ties up all your servers.",
+              "A circuit breaker stops calling a failing service for a while, so requests fail fast.",
+              "Failing fast still fails. Put the payments in a queue and retry later, and users see 'payment processing' instead of an error.",
+              "Hands-on: add a timeout and retries with backoff to an HTTP call, and send failures to a queue."] },
+  { id: "friday", staff: ["Which part removed the most load per dollar today? Which would you cut first if the budget halved?", "What would you test before next Black Friday, and how?"], principal: ["How do you plan capacity for the busiest day of the year across many teams?", "What would make next year's Black Friday a boring day?"],
+    name: "Black Friday", duration: 150, cap: 70,
+    blurb: "Everything at once. Start from almost nothing.",
+    brief: "The biggest day of the year. You start with one app server and the database. Expect static-heavy traffic, checkouts, a bot wave, crashes and a huge spike near the end.",
+    task: "Use everything you learned. Keep the error budget above zero for 2:30.",
+    given: ["app", "db"], tray: ["app", "lb", "auto", "cache", "replica", "cdn", "waf", "queue", "worker"], fresh: [],
+    traffic: t => T({ legit: ramp(t, 0, 90, 150, 650) + wave(t, 100, 138, 380, 6), bots: wave(t, 40, 72, 1600, 3), staticFrac: 0.4, heavyFrac: 0.1 }),
+    events: [{ t: 40, kind: "page", text: "Bot wave detected. Thousands of requests a second from a small set of IPs." },
+             { t: 62, kind: "crash", text: "An app server crashed." },
+             { t: 95, kind: "info", text: "TV ad airs in 5 seconds." },
+             { t: 112, kind: "crash", text: "Another app server crashed." }],
+    learned: ["Real systems combine all of these. Each part removes one kind of load.",
+              "Good teams fix the cause (bots, slow requests, repeated reads) before buying more servers.",
+              "Hands-on: build the whole thing on AWS: CloudFront, a load balancer, containers, ElastiCache, SQS and RDS."] },
+];
+const SANDBOX = { id: "sandbox", name: "Sandbox", sandbox: true, duration: Infinity, cap: 120,
+  blurb: "No timer. Set the traffic, break things, explain.",
+  given: ["lb", "app", "app", "db"], tray: ["app", "lb", "auto", "canary", "breaker", "cache", "queue", "worker", "replica", "standby", "cdn", "waf"], fresh: [],
+  traffic: () => T(sandboxTraffic), events: [], learned: [] };
+let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, heavyFrac: 0, payFrac: 0 };
+
+/* ================================================================== teach mode cards */
+const TEACH = {
+  nolb: { deeper: "Load balancers also check server health and stop sending requests to sick servers. That is what makes a crash survivable.", title: "Two servers, one doing all the work", diagram: [["Users", ""], ["App server 1", "100% busy", "hot"], ["App server 2", "idle", "down"]],
+    explain: "Users connect to one address. Without something in front that shares out the requests, they all land on the first server. The second one sits idle while the first one drowns.",
+    q: "What spreads requests across servers?", options: [["Load balancer", true, "Yes. A load balancer sits in the Entry column and sends each request to the least busy healthy server."], ["Cache", false, "A cache saves database reads. It does not decide which server gets a request."], ["More app servers", false, "More servers still get nothing without a load balancer in front."]] },
+  apphot: { deeper: "Scaling out only works if servers share nothing: no sessions in memory, no local files, no sticky routing.", title: "The app servers are full", diagram: [["Users", ""], ["Load balancer", ""], ["App servers", "over 90% busy", "hot"], ["Database", ""]],
+    explain: "Each server can only answer so many requests a second. Near 100% busy, requests wait in line, so response time shoots up. Past 100%, requests start to fail.",
+    q: "What is the quickest fix here?", options: [["Add app servers (or an autoscaler)", true, "Yes. App code that keeps no data can scale out: more copies, each taking a share."], ["Add a read replica", false, "Replicas help the database. The bottleneck right now is the app servers."], ["Remove the cache", false, "That would send more work to the database and make things worse."]] },
+  dbhot: { deeper: "A cache brings a new problem: old data. Decide per kind of data how old a cached answer may be.", title: "The database is the bottleneck", diagram: [["App servers", ""], ["Primary DB", "over 90% busy", "hot"], ["Cache", "could help", "fix"]],
+    explain: "Almost every page reads from the database. When thousands of people read the same product pages, the database answers the same question again and again.",
+    q: "What takes repeated reads off the database?", options: [["A cache (or read replicas)", true, "Yes. A cache remembers answers to common reads. Replicas also share reads. Writes still go to the primary."], ["More app servers", false, "More app servers send even more queries to the database."], ["A rate limiter", false, "These are real customers. Blocking them is not a fix."]] },
+  bots: { deeper: "Limit by more than IP address: API key, user, or behaviour. Many real users can share one address.", title: "This traffic is not customers", diagram: [["Bots", "2000/s", "hot"], ["Edge", "no filter"], ["App servers", "drowning", "hot"]],
+    explain: "Requests jumped 8× but sign-ups did not move, and most requests come from a few dozen IP addresses. That is a bot or a scraper, not a crowd.",
+    q: "What is the cheapest fix?", options: [["Rate limiter at the edge", true, "Yes. It blocks clients that send far too many requests, before they reach your servers, for about $1 an hour."], ["Many more app servers", false, "You would pay to serve bots, and they can always send more."], ["A CDN", false, "A CDN serves static files. Bots hit your dynamic pages, so they still get through."]] },
+  static: { deeper: "Put a version or hash in file names, so files can be cached for a year and a release still shows up at once.", title: "Your app is serving pictures", diagram: [["Users", ""], ["Edge", "no CDN"], ["App servers", "busy with images", "hot"]],
+    explain: "A big share of requests are images, CSS and JavaScript. Those files never change between users, yet each one travels all the way to your app servers.",
+    q: "Where should static files be served from?", options: [["A CDN at the edge", true, "Yes. A CDN keeps copies close to users. Your app never sees those requests and pages load faster."], ["The database", false, "Databases are for data, and they are your most expensive part to scale."], ["A queue", false, "Queues are for work that can wait. Images are needed now."]] },
+  heavy: { deeper: "Queued jobs can run twice. Make them safe to repeat, and send jobs that keep failing to a separate queue for review.", title: "Users wait for work they do not need", diagram: [["Checkout", ""], ["App server", "sends email, resizes photos", "hot"], ["User", "waits ~1 s", "hot"]],
+    explain: "Checkout sends an email and resizes photos before it answers. The user does not need any of that to see 'order placed', but they wait for all of it, and it keeps servers busy.",
+    q: "How do you make checkout fast again?", options: [["Queue + workers", true, "Yes. Put the slow jobs in a queue, answer the user at once, and let workers do the jobs in the background."], ["Faster app servers", false, "The work is still in the request. Users still wait."], ["A cache", false, "Each checkout is different. There is nothing to reuse."]] },
+  qnow: { deeper: "Watch the age of the oldest job, not just the count. Add workers based on it.", title: "A queue with nobody reading it", diagram: [["App", ""], ["Queue", "jobs piling up", "hot"], ["Workers", "none", "down"]],
+    explain: "The queue holds jobs until something takes them out. With no workers, emails never go out and the queue fills until it rejects new jobs.",
+    q: "What is missing?", options: [["Workers", true, "Yes. Workers take jobs from the queue and run them. Add enough to keep up with how fast jobs arrive."], ["A second queue", false, "Two queues with no workers just fill up twice."], ["A load balancer", false, "Workers pull from the queue; they do not need a load balancer."]] },
+  deploy: { deeper: "Roll back first, find the cause second. Database changes need two steps (add the new, then remove the old) so the old version keeps working.", title: "Errors started with the release", diagram: [["Release v2.5", "just went out", "hot"], ["All app servers", "9% of requests fail", "hot"], ["Users", "see errors", "hot"]],
+    explain: "Nothing else changed: traffic is normal, servers are not busy. Errors jumped the second the new version went out. The change is the most likely cause.",
+    q: "What do you do first?", options: [["Roll back the release", true, "Yes. Restore service first, debug later. Next time, a canary would limit the damage to 10% of users."], ["Add more app servers", false, "More servers run the same broken code. Errors stay the same."], ["Restart the database", false, "The database is fine. Changing healthy parts during an incident makes things worse."]] },
+  leak: { deeper: "Alert on the trend, such as memory climbing after a release, not only on crashes.", title: "Capacity falls a little every second", diagram: [["Release v3.0", "", "hot"], ["App servers", "memory grows", "hot"], ["OOMKilled", "restart", "down"]],
+    explain: "Since version 3.0, every server gets slower as its memory fills. When memory runs out, the system kills the server and it restarts, clean, and the cycle starts again.",
+    q: "What fixes the cause?", options: [["Roll back to the old version", true, "Yes. The leak is in the new code. Roll back now, then find the leak with a memory profile."], ["Add more servers", false, "More leaking servers. They all fill up and get killed too."], ["Restart servers on a timer", false, "That hides the leak and causes regular blips. It is a plaster, not a fix."]] },
+  dbdown: { deeper: "A failover is only as good as your last test of it. Practise it, and make sure the app reconnects quickly.", title: "The primary database is gone", diagram: [["App servers", ""], ["Primary DB", "dead", "down"], ["Standby", "none", "down"]],
+    explain: "Every write (orders, sign-ups, carts) needs the primary. Replicas and the cache can still answer some reads, but nothing can be saved until a primary is back.",
+    q: "What would have made this a short blip?", options: [["A standby database ready to take over", true, "Yes. A standby in another zone is promoted in seconds. In AWS this is RDS Multi-AZ."], ["More read replicas", false, "Replicas answer reads, but writes still need a primary."], ["A bigger cache", false, "A cache cannot save new orders."]] },
+  azdown: { deeper: "Spare capacity in every zone costs money every hour. Decide per service how much failure it must survive.", title: "A whole zone went dark", diagram: [["Load balancer", ""], ["Zone A servers", "gone", "down"], ["Zone B servers", "carrying everything", "hot"]],
+    explain: "Zones are separate buildings with separate power. When one fails, every server in it disappears together. Whatever is left in zone B must carry all the traffic.",
+    q: "What protects you next time?", options: [["Enough spare servers in both zones", true, "Yes. Plan so one zone alone can carry peak traffic (N+1). An autoscaler helps replace lost servers."], ["All servers in one zone", false, "Then one power cut takes down everything."], ["A CDN", false, "A CDN helps static files, not your app servers."]] },
+  partner: { deeper: "Timeouts, retries that wait longer each time, and a fallback. Retrying too fast can knock a struggling partner over.", title: "Your servers are waiting on someone else", diagram: [["App servers", "stuck waiting", "hot"], ["Payment API", "8 s per call", "down"]],
+    explain: "Each payment call holds a server busy until the partner answers. At 8 seconds each, a few calls a second fill every server, and normal pages fail too.",
+    q: "How do you stop their outage becoming yours?", options: [["Timeouts + circuit breaker (and a queue)", true, "Yes. Give up after 1 second, stop calling for a while, and queue payments to retry later."], ["Add many more app servers", false, "They also fill up with waiting calls. You cannot out-buy a slow dependency."], ["A CDN", false, "Payment calls are dynamic. A CDN cannot help."]] },
+};
+
+/* ================================================================== state */
+const $ = s => document.querySelector(s);
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+let stars = store.get("loadrush-stars", {});
+let teachOn = store.get("loadrush-teach", false);
+let role = store.get("loadrush-role", "mid");
+const ROLES = { mid: { name: "Mid-level", wait: 5, desc: "Hints appear in the pager after 5 seconds. Plain explanations." },
+  staff: { name: "Staff", wait: 10, desc: "Hints wait 10 seconds. After each shift: trade-off questions to discuss." },
+  principal: { name: "Principal", wait: Infinity, desc: "No hints. After each shift: trade-off and organisation questions." } };
+let L = null, S = null, armed = null, inspected = "app";
+const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function newState() {
+  return { t: 0, pieces: [], nextId: 1, budget: 100, speed: 1, running: false, over: false, warm: 0, backlog: 0,
+    autoTick: 0, hist: { rps: [], bots: [], p95: [], err: [] }, m: null, tipHeld: {}, tipsShown: {}, fired: {},
+    peak: 0, worstP95: 0, failed: 0, total: 0, spendSec: 0,
+    release: null, dbDown: 0, failoverTo: null, azDown: 0, partnerSlow: 0, taught: {} };
+}
+function addPiece(type, opts = {}) {
+  const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
+  if (type === "app") {
+    const a = S.pieces.filter(x => x.type === "app" && x.az === "A").length, b = S.pieces.filter(x => x.type === "app" && x.az === "B").length;
+    p.az = S.azDown > 0 ? "B" : a <= b ? "A" : "B";
+  }
+  S.pieces.push(p); return p;
+}
+const ready = type => S.pieces.filter(p => p.type === type && p.bootLeft <= 0);
+const has = type => ready(type).length > 0;
+const count = type => S.pieces.filter(p => p.type === type).length;
+const spendRate = () => S.pieces.reduce((a, p) => a + PARTS[p.type].cost, 0);
+
+/* ================================================================== incidents */
+function fire(kind, text) {
+  if (kind === "crash") {
+    const v = ready("app");
+    if (v.length) killPiece(v[Math.floor(Math.random() * v.length)].id);
+    log("page", (text || "An app server crashed.") + (v.length ? "" : " (none were running)"));
+  } else if (kind === "deploy-bug" || kind === "deploy-leak") {
+    if (S.release) return;
+    const canary = has("canary");
+    S.release = { kind: kind === "deploy-bug" ? "bug" : "leak", share: canary ? 0.1 : 1, age: 0, canaryLeft: canary ? CANARY_TIME : 0, rollbackLeft: 0, at: S.t };
+    log(canary ? "info" : "page", (text || "A new version is out.") + (canary ? " Canary: one server got it first, about 10% of users." : " It went to every server at once."));
+    updateRollback(); renderBoard();
+  } else if (kind === "db-fail") {
+    if (S.dbDown > 0) return;
+    const sb = ready("standby")[0];
+    if (sb) { S.dbDown = FAILOVER_TIME; S.failoverTo = sb.id; log("page", (text || "The primary database died.") + ` The standby is taking over (about ${FAILOVER_TIME}s).`); }
+    else { S.dbDown = RESTORE_TIME; log("page", (text || "The primary database died.") + ` No standby. Restoring from backup takes about ${RESTORE_TIME}s.`); }
+    renderBoard();
+  } else if (kind === "az-fail") {
+    if (S.azDown > 0) return;
+    S.azDown = AZ_TIME;
+    const lost = S.pieces.filter(p => p.type === "app" && p.az === "A");
+    lost.forEach(p => killPiece(p.id));
+    log("page", (text || "Zone A is down.") + ` ${lost.length} app server${lost.length === 1 ? "" : "s"} lost. New servers go to zone B until it is back.`);
+  } else if (kind === "partner-slow") {
+    S.partnerSlow = PARTNER_TIME; log("page", text || "The payment provider now takes 8 seconds to answer.");
+  } else log(kind, text);
+}
+function rollback() {
+  const r = S && S.release;
+  if (!r || r.rollbackLeft > 0 || r.canaryLeft > 0 || S.over) return;
+  r.rollbackLeft = ROLLBACK_TIME; log("info", `Rolling back to the old version (about ${ROLLBACK_TIME}s).`); updateRollback();
+}
+function tickIncidents(dt) {
+  if (S.dbDown > 0) {
+    S.dbDown -= dt;
+    if (S.dbDown <= 0) {
+      S.dbDown = 0;
+      if (S.failoverTo) { S.pieces = S.pieces.filter(p => p.id !== S.failoverTo); S.failoverTo = null; log("good", "The standby is now the primary. Add a new standby to be safe again."); }
+      else log("good", "Primary database restored from backup.");
+      renderBoard();
+    }
+  }
+  if (S.azDown > 0) { S.azDown -= dt; if (S.azDown <= 0) { S.azDown = 0; log("good", "Zone A is back."); } }
+  if (S.partnerSlow > 0) { S.partnerSlow -= dt; if (S.partnerSlow <= 0) { S.partnerSlow = 0; log("good", "The payment provider is fast again."); } }
+  const r = S.release; if (!r) return;
+  if (r.kind === "leak") {
+    r.age += dt;
+    if (r.age >= LEAK_TIME) {
+      r.age = 0;
+      const victims = r.share >= 1 ? ready("app") : ready("app").slice(0, 1);
+      victims.forEach(p => { p.bootLeft = PARTS.app.boot; });
+      log("page", `OOMKilled: ${victims.length} app server${victims.length === 1 ? "" : "s"} ran out of memory and restarted.`); renderBoard();
+    }
+  }
+  if (r.canaryLeft > 0) { r.canaryLeft -= dt; if (r.canaryLeft <= 0) { S.release = null; log("good", "Canary checks failed, so it rolled back by itself. Only about 10% of users saw the bad version."); updateRollback(); renderBoard(); } }
+  else if (r.rollbackLeft > 0) { r.rollbackLeft -= dt; if (r.rollbackLeft <= 0) { S.release = null; log("good", "Rollback finished. Every server runs the old version again."); updateRollback(); renderBoard(); } }
+}
+
+/* ================================================================== simulation */
+function step(dt) {
+  S.t += dt;
+  const tr = L.traffic(S.t);
+  for (const p of S.pieces) if (p.bootLeft > 0) p.bootLeft = Math.max(0, p.bootLeft - dt);
+  for (const e of L.events) if (!S.fired[e.t] && S.t >= e.t) { S.fired[e.t] = true; fire(e.kind, e.text); }
+  tickIncidents(dt);
+
+  const lb = has("lb"), nApp = ready("app").length, cdn = has("cdn"), waf = has("waf"), cache = has("cache");
+  const queue = has("queue"), workers = ready("worker").length, reps = ready("replica").length, breaker = has("breaker");
+  const rel = S.release, dbUp = S.dbDown <= 0;
+
+  // edge
+  const legit = tr.legit, bots = tr.bots;
+  const botsPass = waf ? bots * 0.04 : bots;
+  const staticReq = legit * tr.staticFrac, dynLegit = legit - staticReq;
+  const cdnServed = cdn ? staticReq * 0.95 : 0, staticToApp = staticReq - cdnServed;
+  // special kinds of request
+  const heavy = dynLegit * tr.heavyFrac;
+  const pay = dynLegit * tr.payFrac;
+  let payQueued = 0, payFailed = 0, payStuck = 0;
+  if (S.partnerSlow > 0 && pay > 0) { if (!breaker) payStuck = pay; else if (queue) payQueued = pay; else payFailed = pay; }
+  // app tier
+  const slowCost = queue ? heavy * 0.3 : heavy * 5;
+  const appLoad = (dynLegit - heavy) + botsPass + staticToApp * 0.4 + slowCost + payStuck * 30;
+  const health = rel && rel.kind === "leak" ? 1 - rel.share * (1 - Math.max(0.15, 1 - rel.age / 30)) : 1;
+  const used = lb ? nApp : Math.min(nApp, 1);
+  const capA = used * APP_CAP * health;
+  const fA = appLoad <= 0 ? 0 : capA <= 0 ? 1 : Math.max(0, 1 - capA / appLoad);
+  const uA = capA > 0 ? appLoad / capA : (appLoad > 0 ? 9 : 0);
+  const bugFail = rel && rel.kind === "bug" ? BUG_FAIL * rel.share : 0;
+  // cache
+  S.warm = cache ? Math.min(1, S.warm + dt / 6) : 0;
+  const hit = 0.75 * S.warm;
+  const servedDyn = (dynLegit + botsPass) * (1 - fA);
+  const readsAll = servedDyn * tr.readFrac, reads = readsAll * (1 - hit);
+  let writes = servedDyn * (1 - tr.readFrac);
+  // background jobs
+  let qFail = 0, jobWrites = 0, jobsIn = 0, jobsDone = 0;
+  if (queue) {
+    jobsIn = heavy * (1 - fA) + payQueued;
+    S.backlog += jobsIn * dt;
+    const rate = dbUp ? workers * WORKER_RATE : 0;
+    const done = Math.min(S.backlog, rate * dt);
+    S.backlog -= done; jobsDone = done / dt; jobWrites = jobsDone * 0.6;
+    if (S.backlog > 3000) { qFail = jobsIn; S.backlog = 3000; }
+  } else { writes += heavy * (1 - fA) * 0.6; S.backlog = 0; }
+  // database
+  const repCap = reps * REP_CAP, readsOnRep = Math.min(reads, repCap);
+  let primLoad = 0, failedDb = 0, uD = 0;
+  if (dbUp) {
+    primLoad = writes + jobWrites + (reads - readsOnRep);
+    const fD = primLoad <= DB_CAP ? 0 : 1 - DB_CAP / primLoad;
+    failedDb = (writes + reads - readsOnRep) * fD; uD = primLoad / DB_CAP;
+  } else failedDb = writes + (reads - readsOnRep);
+  const dbFailShare = servedDyn > 0 ? Math.min(1, failedDb / servedDyn) : 0;
+  const uR = repCap ? readsOnRep / repCap : 0;
+
+  // what users feel
+  const legitServed = dynLegit * (1 - fA);
+  const failApp = (dynLegit + staticToApp) * fA;
+  const failDb = legitServed * dbFailShare;
+  const failBug = legitServed * (1 - dbFailShare) * bugFail;
+  const failedLegit = failApp + failDb + failBug + qFail + payFailed;
+  const err = legit > 0 ? Math.min(1, failedLegit / legit) : 0;
+  const appLat = 30 / (1 - Math.min(uA, 0.965));
+  const dbLat = dbUp ? 14 / (1 - Math.min(uD, 0.965)) : 0;
+  const lat = {
+    core: 1.5 * (appLat + dbLat), edge: 20,
+    stat: tr.staticFrac > 0 && !cdn ? 160 * tr.staticFrac : 0,
+    slow: !queue && tr.heavyFrac > 0 ? 900 * Math.min(1, tr.heavyFrac * 6) : 0,
+    failing: fA > 0 ? 1500 * fA : 0,
+    partner: payStuck > 0 ? 2500 : 0,
+  };
+  const p95 = Math.min(9999, lat.core + lat.edge + lat.stat + lat.slow + lat.failing + lat.partner);
+
+  const burnErr = Math.max(0, err * 100 - 1) * 0.6, burnLat = p95 > 800 ? 1.5 + (p95 - 800) / 400 : 0;
+  const burn = Math.min(10, burnErr + burnLat);
+  S.budget = Math.max(0, S.budget - burn * dt);
+  if (L.sandbox && burn === 0) S.budget = Math.min(100, S.budget + 3 * dt);
+
+  autoscale(dt, uA, nApp);
+
+  S.peak = Math.max(S.peak, legit + bots); S.worstP95 = Math.max(S.worstP95, p95);
+  S.failed += failedLegit * dt; S.total += legit * dt; S.spendSec += spendRate() * dt;
+
+  const out = {
+    blocked: bots - botsPass, cdn: cdnServed,
+    appfail: (dynLegit + botsPass + staticToApp) * fA + failBug,
+    appok: staticToApp * (1 - fA) + payFailed,
+    cache: readsAll * hit,
+    queue: queue ? jobsIn : 0,
+  };
+  const toDb = Math.max(0, servedDyn - out.cache - out.queue - failBug - payFailed);
+  out.dbfail = toDb * dbFailShare; out.db = toDb * (1 - dbFailShare);
+
+  S.m = { tr, legit, bots, botsPass, staticReq, dynLegit, cdnServed, staticToApp, heavy, pay, payStuck, payQueued, payFailed,
+    lb, nApp, used, health, capA, appLoad, uA, fA, bugFail, cache, hit, readsAll, reads, writes, jobWrites, jobsIn, jobsDone,
+    workers, queue, reps, repCap, readsOnRep, primLoad, uD, uR, dbUp, failApp, failDb, failBug, qFail, failedLegit, err,
+    appLat, dbLat, lat, p95, burnErr, burnLat, burn, out, cdn, waf, breaker };
+  coach(dt);
+
+  if (!L.sandbox) {
+    if (S.budget <= 0 && !S.over) end(false);
+    else if (S.t >= L.duration && !S.over) end(true);
+  }
+}
+
+function autoscale(dt, uA, nApp) {
+  if (!has("auto")) return;
+  S.autoTick += dt; if (S.autoTick < 2) return; S.autoTick = 0;
+  // like a Kubernetes HPA: desired = ceil(current * load / 65% target)
+  const desired = Math.min(PARTS.app.max, Math.ceil(Math.max(1, nApp) * Math.min(uA, 3) / 0.65));
+  let added = 0;
+  while (uA > 0.7 && count("app") < desired && spendRate() + PARTS.app.cost <= L.cap) { addPiece("app", { auto: true }); added++; }
+  if (added) { log("info", `Autoscaler added ${added} app server${added > 1 ? "s" : ""} (ready in 4s).`); renderBoard(); }
+  else if (uA > 0.7 && count("app") < desired && !S.tipsShown.autocap) { S.tipsShown.autocap = 1; log("coach", "The autoscaler wants more servers, but you are at your spend limit."); }
+  else if (uA < 0.3 && count("app") > 2) {
+    const v = S.pieces.find(p => p.type === "app" && p.auto);
+    if (v) { S.pieces = S.pieces.filter(p => p !== v); log("info", "Autoscaler removed a quiet app server to save money."); renderBoard(); }
+  }
+}
+
+function coach(dt) {
+  const m = S.m, apps = count("app"), r = S.release;
+  const tips = [
+    ["nolb", apps >= 2 && !m.lb, `You have ${apps} app servers, but only one is getting requests. Something has to spread the requests across them.`],
+    ["bots", m.bots > 300 && !m.waf, `${Math.round(m.bots)} requests a second come from a few IP addresses. These are not customers.`],
+    ["deploy", r && r.kind === "bug" && r.share >= 1 && !r.rollbackLeft, "Errors jumped the moment the new version went out. Nothing else changed."],
+    ["leak", r && r.kind === "leak" && r.share >= 1 && !r.rollbackLeft && r.age > 8, `App servers have lost ${Math.round((1 - m.health) * 100)}% of their speed since the release, and it keeps falling.`],
+    ["dbdown", !m.dbUp, "The primary database is down. Every write fails until it is back."],
+    ["azdown", S.azDown > 0 && m.uA > 0.9, "Zone A is down and zone B cannot carry all the traffic."],
+    ["partner", m.payStuck > 0, `Payment calls take 8 seconds and hold your servers while they wait. p95 is ${Math.round(m.p95)} ms.`],
+    ["static", m.tr.staticFrac >= 0.3 && !m.cdn && S.t > 8, `${Math.round(m.tr.staticFrac * 100)}% of requests are images, CSS and JS. Your app does not need to serve those.`],
+    ["heavy", m.tr.heavyFrac > 0 && !m.queue && S.t > 6, `Checkout makes the user wait for emails and image resizing. p95 is ${Math.round(m.p95)} ms.`],
+    ["qnow", m.queue && m.workers === 0 && S.backlog > 40, `${Math.round(S.backlog)} jobs are waiting in the queue, and nothing is taking them out.`],
+    ["qbig", m.queue && m.workers > 0 && S.backlog > 800, `The queue backlog is ${Math.round(S.backlog)} jobs and growing. The workers cannot keep up.`],
+    ["dbhot", m.dbUp && m.uD > 0.9, `The database is at ${Math.round(m.uD * 100)}%. Most of its work is reads. What else can answer reads?`],
+    ["apphot", m.uA > 0.92 && !r && S.azDown <= 0, `App servers are at ${Math.round(m.uA * 100)}% load. They need help.`],
+    ["autolb", has("auto") && !m.lb, "The autoscaler is adding servers, but nothing sends them traffic."],
+  ];
+  const wait = teachOn ? 2 : ROLES[role].wait;
+  for (const [k, cond, text] of tips) {
+    S.tipHeld[k] = cond ? (S.tipHeld[k] || 0) + dt : 0;
+    if (S.tipHeld[k] > wait && !S.tipsShown[k]) {
+      S.tipsShown[k] = 1; log("coach", text);
+      if (teachOn && TEACH[k] && !S.taught[k]) { S.taught[k] = 1; teach(k); return; }
+    }
+  }
+}
+
+function killPiece(id) {
+  const el = document.querySelector(`.chip[data-id="${id}"]`);
+  S.pieces = S.pieces.filter(p => p.id !== id);
+  if (el) { el.classList.add("dead"); setTimeout(renderBoard, 600); } else renderBoard();
+}
+
+/* ================================================================== placing parts */
+function place(type, zone) {
+  if (!S || S.over) return false;
+  const part = PARTS[type];
+  if (zone !== part.zone) { toast(`${part.name} goes in the ${ZONE_NAMES[part.zone]} column. ${part.what}`); return false; }
+  if (count(type) >= part.max) { toast(`You can have at most ${part.max} ${part.name.toLowerCase()}${part.max > 1 ? "s" : ""}.`); return false; }
+  if (spendRate() + part.cost > L.cap) { toast(`Over budget: this would cost $${spendRate() + part.cost} an hour. Your limit is $${L.cap}. Remove something first.`); return false; }
+  const p = addPiece(type);
+  log("info", `${part.name} added${p.az ? ` in zone ${p.az}` : ""}${p.bootLeft ? `, ready in ${part.boot}s` : ""}.`);
+  if (type === "app" && count("app") >= 2 && !count("lb")) setTimeout(() => toast("Tip: with no load balancer, the new server will sit idle."), 300);
+  renderBoard(); return true;
+}
+function removePiece(id) {
+  const p = S.pieces.find(x => x.id === id); if (!p || p.fixed) return;
+  S.pieces = S.pieces.filter(x => x !== p); log("info", `${PARTS[p.type].name} removed.`); renderBoard();
+}
+
+/* ================================================================== inspector: the numbers behind each part */
+const n0 = v => Math.round(v).toLocaleString("en-US");
+const pc = v => Math.round(v * 100) + "%";
+const ms = v => n0(v) + " ms";
+function inspector(z, m) {
+  const R = (k, v, cls = "") => ({ k, v, cls });
+  switch (z) {
+    case "users": return { title: "Incoming traffic", rows: [R("Real users a second", n0(m.legit)), R("Bots a second", n0(m.bots), m.bots > 0 ? "badv" : ""),
+      R("Images, CSS, JS", pc(m.tr.staticFrac)), R("Reads (vs writes)", pc(m.tr.readFrac)), R("Slow jobs (checkouts)", pc(m.tr.heavyFrac)), R("Payment calls", pc(m.tr.payFrac))],
+      note: "This is what arrives. Every part on the board removes or absorbs one kind of it." };
+    case "edge": return { title: "Edge", rows: [R("Static files a second", n0(m.staticReq)), R("Served by the CDN", n0(m.cdnServed)), R("Static sent on to the app", n0(m.staticToApp)),
+      R("Bots arriving", n0(m.bots)), R("Blocked by rate limiter", n0(m.bots - m.botsPass)), R("Bots getting through", n0(m.botsPass), m.botsPass > 50 ? "badv" : "")],
+      note: m.cdn ? "The CDN answers 95% of static requests near the user." : "No CDN: every image and script goes all the way to your app." };
+    case "entry": return { title: "Entry", rows: [R("Load balancer", m.lb ? "yes" : "no", m.lb ? "" : "badv"), R("App servers running", n0(m.nApp)), R("Servers getting traffic", n0(m.used), m.used < m.nApp ? "badv" : "")],
+      note: m.lb ? "The load balancer shares requests across every healthy server." : "Without a load balancer, all requests go to one server." };
+    case "app": {
+      const rows = [R("Dynamic requests (users + bots)", n0(m.dynLegit - m.heavy + m.botsPass)), R("Static requests × 0.4", n0(m.staticToApp * 0.4)),
+        R(m.queue ? "Slow jobs × 0.3 (queued)" : "Slow jobs × 5 (done inline)", n0(m.queue ? m.heavy * 0.3 : m.heavy * 5))];
+      if (m.payStuck) rows.push(R("Payment calls × 30 (stuck waiting)", n0(m.payStuck * 30), "badv"));
+      rows.push(R("Total load", n0(m.appLoad), "sum"), R(`Capacity: ${m.used} × 150${m.health < 1 ? ` × ${pc(m.health)} health` : ""}`, n0(m.capA)),
+        R("Load ÷ capacity", pc(m.uA), m.uA > 0.9 ? "badv" : ""), R("Requests failing here", pc(m.fA), m.fA > 0 ? "badv" : ""),
+        R("App time: 30 ms ÷ (1 − load)", ms(m.appLat)));
+      if (m.bugFail) rows.push(R("Failing from the bad release", pc(m.bugFail), "badv"));
+      return { title: "App tier", rows, note: "Response time grows like 1 ÷ (1 − load): at 50% busy it doubles, at 90% it is 10×. That curve is why you keep headroom." };
+    }
+    case "cache": return { title: "Cache", rows: [R("Cache running", m.cache ? "yes" : "no"), R("Warm", pc(m.hit / 0.75 || 0)), R("Reads a second", n0(m.readsAll)),
+      R("Answered by the cache", n0(m.readsAll * m.hit)), R("Sent to the database", n0(m.reads))], note: "A new cache starts empty and warms up over a few seconds. Once warm it answers 75% of reads." };
+    case "jobs": return { title: "Background jobs", rows: [R("Queue running", m.queue ? "yes" : "no"), R("Jobs arriving a second", n0(m.jobsIn)),
+      R(`Workers: ${m.workers} × 15`, n0(m.workers * WORKER_RATE)), R("Jobs done a second", n0(m.jobsDone)), R("Waiting in the queue", n0(S.backlog), S.backlog > 800 ? "badv" : "")],
+      note: "If jobs arrive faster than workers finish them, the queue grows. At 3,000 it is full and new jobs fail." };
+    case "data": return { title: "Database", rows: [R("Primary", m.dbUp ? "up" : "DOWN", m.dbUp ? "" : "badv"), R("Writes a second", n0(m.writes + m.jobWrites)),
+      R("Reads reaching the database", n0(m.reads)), R(`Replicas: ${m.reps} × 300`, n0(m.readsOnRep) + " / " + n0(m.repCap)),
+      R("Primary load (writes + other reads)", n0(m.primLoad), "sum"), R("Primary capacity", n0(DB_CAP)), R("Load ÷ capacity", pc(m.uD), m.uD > 0.9 ? "badv" : ""),
+      R("DB time: 14 ms ÷ (1 − load)", m.dbUp ? ms(m.dbLat) : "n/a")],
+      note: m.dbUp ? "Replicas only take reads. Every write goes to the primary." : "No primary: writes fail, and reads only work through replicas or the cache." };
+    case "p95": return { title: "Where p95 comes from", rows: [R("1.5 × (app time + DB time)", ms(m.lat.core)), R("Network and edge", ms(m.lat.edge)),
+      R("Static files without a CDN", ms(m.lat.stat), m.lat.stat ? "badv" : ""), R("Slow work inside requests", ms(m.lat.slow), m.lat.slow ? "badv" : ""),
+      R("Requests timing out", ms(m.lat.failing), m.lat.failing ? "badv" : ""), R("Waiting on the payment API", ms(m.lat.partner), m.lat.partner ? "badv" : ""),
+      R("p95", ms(m.p95), "sum")], note: "p95 means 95 of every 100 requests are faster than this. The slowest 5 are what users remember." };
+    case "err": return { title: "Where errors come from", rows: [R("App tier full", n0(m.failApp) + "/s", m.failApp ? "badv" : ""), R("Database full or down", n0(m.failDb) + "/s", m.failDb ? "badv" : ""),
+      R("Bad release", n0(m.failBug) + "/s", m.failBug ? "badv" : ""), R("Queue full", n0(m.qFail) + "/s", m.qFail ? "badv" : ""), R("Payments failed fast", n0(m.payFailed) + "/s", m.payFailed ? "badv" : ""),
+      R("Failed ÷ real users", (m.err * 100).toFixed(1) + "%", "sum")], note: "Only real users count. Blocked bots are not errors." };
+    case "budget": return { title: "Error budget", rows: [R("From errors: (error% − 1) × 0.6", m.burnErr.toFixed(1) + "/s", m.burnErr ? "badv" : ""),
+      R("From slowness: p95 over 800 ms", m.burnLat.toFixed(1) + "/s", m.burnLat ? "badv" : ""), R("Burn rate (max 10/s)", m.burn.toFixed(1) + "/s", "sum"), R("Budget left", pc(S.budget / 100))],
+      note: "Real teams agree a target (an SLO), like 99% of requests OK. The budget is how much failure is allowed. When it runs out, new features stop and reliability work starts." };
+  }
+}
+function renderInspector() {
+  if (!S || !S.m) return;
+  const d = inspector(inspected, S.m);
+  $("#insp").innerHTML = `<div class="it">${d.title}</div>` + d.rows.map(r => `<div class="ir ${r.cls}"><span>${r.k}</span><b>${r.v}</b></div>`).join("") + `<div class="note">${d.note}</div>`;
+  document.querySelectorAll(".zone[data-z]").forEach(z => z.classList.toggle("inspected", z.dataset.z === inspected));
+}
+function inspect(z) { inspected = z; renderInspector(); }
+
+/* ================================================================== drawing */
+function renderTray() {
+  const tray = $("#tray"); tray.innerHTML = "";
+  for (const type of L.tray) {
+    const p = PARTS[type];
+    const b = document.createElement("button");
+    b.className = "card" + (L.fresh.includes(type) ? " new" : "") + (armed === type ? " armed" : "");
+    b.dataset.type = type; b.title = `${p.what}\nIn real life: ${p.real}.`;
+    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="meta">$${p.cost}/h · ${p.boot}s start</span>`;
+    tray.appendChild(b);
+  }
+  $("#sandbox").hidden = !L.sandbox;
+}
+function renderBoard() {
+  const newVer = S.release && S.release.share >= 1 ? "all" : S.release ? "one" : null;
+  let firstApp = true;
+  for (const z of document.querySelectorAll(".zone[data-z]")) {
+    const zone = z.dataset.z; if (zone === "users") continue;
+    const chips = z.querySelector(".chips"); chips.innerHTML = "";
+    for (const p of S.pieces.filter(x => PARTS[x.type].zone === zone)) {
+      const part = PARTS[p.type];
+      const onNew = p.type === "app" && p.bootLeft <= 0 && (newVer === "all" || (newVer === "one" && firstApp));
+      if (p.type === "app" && p.bootLeft <= 0) firstApp = false;
+      const down = p.type === "db" && S.dbDown > 0;
+      const c = document.createElement("div");
+      c.className = "chip" + (p.fixed ? " fixed" : "") + (p.bootLeft > 0 ? " boot" : "") + (p.auto ? " auto" : "") + (down ? " down" : "") + (onNew ? " newver" : "");
+      c.dataset.id = p.id; c.title = part.what + (onNew ? " Running the new release." : "");
+      const label = down ? "Primary DB · DOWN" : part.name + (onNew ? " · new" : "") + (p.id === S.failoverTo ? " · promoting" : "");
+      c.innerHTML = `<span class="t">${part.tag}</span><span class="n">${label}</span>${p.az ? `<span class="az">${p.az}</span>` : ""}${p.fixed ? "" : `<button class="x" aria-label="Remove ${part.name}">×</button>`}<span class="pb"></span>`;
+      if (!p.fixed) c.querySelector(".x").onclick = e => { e.stopPropagation(); removePiece(p.id); };
+      chips.appendChild(c);
+    }
+  }
+  for (const z of document.querySelectorAll(".zone[data-z]")) {
+    const zone = z.dataset.z;
+    const usable = L.tray.some(t => PARTS[t].zone === zone);
+    const empty = !S.pieces.some(p => PARTS[p.type].zone === zone);
+    z.classList.toggle("need", usable && empty && zone !== "users");
+  }
+  updateHeader();
+}
+function setLoad(zone, u, text) {
+  const el = document.querySelector(`.zone[data-z="${zone}"] .load`);
+  if (u === null) { el.innerHTML = ""; return; }
+  if (!el.firstChild) el.innerHTML = `<div class="bar"><i></i></div><div class="txt"><span></span><span></span></div>`;
+  const i = el.querySelector("i"); i.style.width = Math.min(100, u * 100) + "%";
+  i.style.background = u > 0.95 ? "var(--bad)" : u > 0.75 ? "var(--warn)" : "var(--ok)";
+  const [a, b] = el.querySelectorAll(".txt span"); a.textContent = text; b.textContent = Math.round(u * 100) + "%";
+}
+function updateLive() {
+  const m = S.m; if (!m) return;
+  $("#uRps").textContent = Math.round(m.legit);
+  $("#uBots").textContent = m.bots > 1 ? `+${Math.round(m.bots)} bots` : "";
+  setLoad("app", Math.min(m.uA, 1.5), `${m.nApp} up${!m.lb && m.nApp > 1 ? ", 1 used" : ""}${m.health < 0.99 ? ` · ${pc(m.health)} health` : ""}`);
+  setLoad("data", m.dbUp ? Math.min(m.uD, 1.5) : 1.5, !m.dbUp ? `DOWN ${Math.ceil(S.dbDown)}s` : m.reps ? `primary · replicas ${pc(m.uR)}` : "primary");
+  setLoad("cache", has("cache") ? m.hit / 0.75 : null, "warm");
+  setLoad("jobs", has("queue") ? Math.min(1, S.backlog / 3000) : null, `${Math.round(S.backlog)} waiting`);
+  setLoad("edge", m.waf && m.bots > 1 ? (m.bots - m.botsPass) / m.bots : null, "bots blocked");
+  document.querySelector('.zone[data-z="data"]').classList.toggle("alarm", !m.dbUp);
+  document.querySelector('.zone[data-z="app"]').classList.toggle("alarm", !!(S.release && S.release.share >= 1) || m.payStuck > 0);
+  for (const p of S.pieces) {
+    const c = document.querySelector(`.chip[data-id="${p.id}"]`); if (!c) continue;
+    const booting = p.bootLeft > 0; c.classList.toggle("boot", booting);
+    c.querySelector(".pb").style.width = booting ? (100 * (1 - p.bootLeft / PARTS[p.type].boot)) + "%" : "0";
+  }
+  $("#rpsV").textContent = Math.round(m.legit + m.bots);
+  $("#p95V").textContent = Math.round(m.p95) + " ms"; $("#p95V").style.color = m.p95 > 800 ? "var(--bad)" : "var(--ink)";
+  $("#errV").textContent = (m.err * 100).toFixed(1) + "%"; $("#errV").style.color = m.err > 0.01 ? "var(--bad)" : "var(--ink)";
+  $("#budgetV").textContent = Math.ceil(S.budget) + "%";
+  const bb = $("#budgetBar"); bb.style.width = S.budget + "%"; bb.style.background = S.budget < 25 ? "var(--bad)" : S.budget < 60 ? "var(--warn)" : "var(--ok)";
+  updateHeader();
+}
+function updateHeader() {
+  const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  $("#clock").textContent = L.sandbox ? `${fmt(S.t)} · no limit` : `${fmt(Math.min(S.t, L.duration))} / ${fmt(L.duration)}`;
+  const sp = spendRate(); $("#spend").textContent = `$${sp} / $${L.cap} an hour`; $("#spend").style.color = sp >= L.cap ? "var(--warn)" : "var(--ink)";
+}
+function updateRollback() {
+  const r = S && S.release, b = $("#rollback");
+  b.hidden = !r || r.canaryLeft > 0;
+  b.disabled = !!(r && r.rollbackLeft > 0);
+  b.textContent = r && r.rollbackLeft > 0 ? "Rolling back…" : "Roll back release";
+}
+
+/* sparklines */
+function spark(id, data, opts) {
+  const c = $(id), dpr = devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (!w) return;
+  if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const max = Math.max(opts.min, ...data.flat(), opts.line || 0) * 1.1;
+  const y = v => h - 2 - (v / max) * (h - 4), N = 150, x = i => (i / (N - 1)) * w;
+  if (opts.line) { g.strokeStyle = css.getPropertyValue("--bad"); g.setLineDash([3, 3]); g.lineWidth = 1; g.beginPath(); g.moveTo(0, y(opts.line)); g.lineTo(w, y(opts.line)); g.stroke(); g.setLineDash([]); }
+  opts.series.forEach((s, k) => {
+    const d = data[k]; if (!d.length) return;
+    const off = N - d.length, col = css.getPropertyValue(s).trim();
+    g.beginPath(); d.forEach((v, i) => i ? g.lineTo(x(i + off), y(v)) : g.moveTo(x(i + off), y(v)));
+    g.strokeStyle = col; g.lineWidth = 1.6; g.stroke();
+    g.lineTo(x(N - 1), h); g.lineTo(x(off), h); g.closePath(); g.globalAlpha = .12; g.fillStyle = col; g.fill(); g.globalAlpha = 1;
+    g.beginPath(); g.arc(x(N - 1), y(d[d.length - 1]), 2.5, 0, 7); g.fillStyle = col; g.fill();
+  });
+}
+function pushHist() {
+  const h = S.hist, m = S.m; if (!m) return;
+  h.rps.push(m.legit); h.bots.push(m.bots); h.p95.push(Math.min(m.p95, 3000)); h.err.push(m.err * 100);
+  for (const k in h) if (h[k].length > 150) h[k].shift();
+  spark("#cRps", [h.rps, h.bots], { min: 100, series: ["--signal", "--bot"] });
+  spark("#cP95", [h.p95], { min: 400, line: 800, series: ["--warn"] });
+  spark("#cErr", [h.err], { min: 2, line: 1, series: ["--bad"] });
+  renderInspector();
+}
+
+/* request particles */
+const flow = $("#flow"), fg = flow.getContext("2d");
+let parts = [], anchors = {}, spawnAcc = 0;
+function measure() {
+  const b = $("#board").getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  flow.width = b.width * dpr; flow.height = b.height * dpr; fg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const z of document.querySelectorAll(".zone[data-z]")) {
+    const r = z.getBoundingClientRect();
+    anchors[z.dataset.z] = { x: r.left - b.left + r.width / 2, y: r.top - b.top + r.height / 2, h: r.height };
+  }
+}
+const ROUTES = { blocked: ["users", "edge"], cdn: ["users", "edge"], appfail: ["users", "edge", "entry", "app"], appok: ["users", "edge", "entry", "app"],
+  cache: ["users", "edge", "entry", "app", "cache"], queue: ["users", "edge", "entry", "app", "jobs"], db: ["users", "edge", "entry", "app", "data"], dbfail: ["users", "edge", "entry", "app", "data"] };
+function spawn(dt) {
+  const m = S.m; if (!m) return;
+  const total = Object.values(m.out).reduce((a, b) => a + b, 0); if (total <= 0) return;
+  spawnAcc += Math.min(reduced ? 12 : 55, total / 10) * dt;
+  while (spawnAcc >= 1) {
+    spawnAcc -= 1;
+    let r = Math.random() * total, kind = "db";
+    for (const [k, v] of Object.entries(m.out)) { if ((r -= v) <= 0) { kind = k; break; } }
+    const isBot = kind === "blocked" || (m.botsPass > 0 && kind !== "cdn" && Math.random() < m.botsPass / (m.legit + m.botsPass));
+    parts.push({ route: ROUTES[kind], kind, seg: 0, f: 0, jitter: Math.random() - .5, bot: isBot, life: 1 });
+  }
+}
+function drawFlow(dt, moving) {
+  const w = flow.width / (devicePixelRatio || 1), h = flow.height / (devicePixelRatio || 1);
+  fg.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  fg.strokeStyle = css.getPropertyValue("--line-2"); fg.lineWidth = 1;
+  const link = (a, b) => { const A = anchors[a], B = anchors[b]; if (!A || !B) return; fg.beginPath(); fg.moveTo(A.x, A.y); fg.bezierCurveTo((A.x + B.x) / 2, A.y, (A.x + B.x) / 2, B.y, B.x, B.y); fg.stroke(); };
+  [["users", "edge"], ["edge", "entry"], ["entry", "app"], ["app", "cache"], ["app", "jobs"], ["app", "data"], ["cache", "data"], ["jobs", "data"]].forEach(([a, b]) => link(a, b));
+  const col = { signal: css.getPropertyValue("--signal").trim(), bot: css.getPropertyValue("--bot").trim(), bad: css.getPropertyValue("--bad").trim(), ok: css.getPropertyValue("--ok").trim(), dim: css.getPropertyValue("--ink-faint").trim() };
+  const speed = 520 * (S ? S.speed : 1);
+  parts = parts.filter(p => p.life > 0);
+  for (const p of parts) {
+    const A = anchors[p.route[p.seg]], B = anchors[p.route[p.seg + 1]];
+    if (!A) { p.life = 0; continue; }
+    let x, y;
+    if (!B) { if (moving) p.life -= dt * 2.5; x = A.x + p.jitter * 20; y = A.y + p.jitter * A.h * 0.35; }
+    else {
+      const dist = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+      if (moving) p.f += (speed * dt) / dist;
+      if (p.f >= 1) { p.seg++; p.f = 0; continue; }
+      const t = p.f, mx = (A.x + B.x) / 2;
+      x = (1 - t) ** 3 * A.x + 3 * (1 - t) ** 2 * t * mx + 3 * (1 - t) * t * t * mx + t ** 3 * B.x;
+      y = (1 - t) ** 3 * A.y + 3 * (1 - t) ** 2 * t * A.y + 3 * (1 - t) * t * t * B.y + t ** 3 * B.y + p.jitter * 14;
+    }
+    const last = p.seg >= p.route.length - 1, failed = p.kind === "appfail" || p.kind === "dbfail";
+    let c = p.bot ? col.bot : col.signal;
+    if (last && failed) c = col.bad; else if (last && p.kind === "blocked") c = col.dim; else if (last && (p.kind === "cdn" || p.kind === "cache")) c = col.ok;
+    fg.globalAlpha = Math.max(0, p.life); fg.fillStyle = c;
+    fg.beginPath(); fg.arc(x, y, last && failed ? 3.2 : 2.2, 0, 7); fg.fill();
+  }
+  fg.globalAlpha = 1;
+}
+
+/* pager + toast */
+function log(kind, text) {
+  const el = document.createElement("div"); el.className = "msg " + kind;
+  const label = { page: "PAGE", coach: "COACH", good: "OK", info: "INFO" }[kind] || "INFO";
+  const t = S ? S.t : 0;
+  el.innerHTML = `<span class="when mono">${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}</span><span class="k">${label}</span>`;
+  el.appendChild(document.createTextNode(text));
+  const pg = $("#pager"); pg.prepend(el);
+  while (pg.children.length > 40) pg.lastChild.remove();
+}
+function toast(text) { const t = $("#toast"); t.textContent = text; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3800); }
+
+/* ================================================================== teach mode */
+function diagramSvg(nodes) {
+  const W = 170, H = 64, gap = 46, pad = 6;
+  const width = nodes.length * W + (nodes.length - 1) * gap + pad * 2;
+  let s = `<svg viewBox="0 0 ${width} ${H + pad * 2}" role="img" aria-label="${nodes.map(n => n[0]).join(" to ")}">`;
+  s += `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker></defs>`;
+  nodes.forEach(([label, sub, state], i) => {
+    const x = pad + i * (W + gap), y = pad;
+    s += `<g class="dg ${state || ""}"><rect x="${x}" y="${y}" width="${W}" height="${H}" rx="9"/>` +
+         `<text x="${x + W / 2}" y="${y + (sub ? 27 : 37)}" text-anchor="middle">${label}</text>` +
+         (sub ? `<text class="sub" x="${x + W / 2}" y="${y + 47}" text-anchor="middle">${sub}</text>` : "") + `</g>`;
+    if (i < nodes.length - 1) s += `<line class="arrow" x1="${x + W + 4}" y1="${y + H / 2}" x2="${x + W + gap - 6}" y2="${y + H / 2}" marker-end="url(#ah)"/>`;
+  });
+  return s + "</svg>";
+}
+function teach(key) {
+  const c = TEACH[key]; if (!c) return;
+  setRunning(false);
+  $("#sheet").innerHTML = `
+    <div class="kick teach">Teach mode · the game is paused</div>
+    <h2>${c.title}</h2>
+    <div class="diagram">${diagramSvg(c.diagram)}</div>
+    <p>${c.explain}</p>
+    ${role !== "mid" && c.deeper ? `<p class="real"><b>Going deeper:</b> ${c.deeper}</p>` : ""}
+    <h3>${c.q}</h3>
+    <div class="choices">${c.options.map((o, i) => `<button class="choice" data-i="${i}">${o[0]}</button>`).join("")}</div>
+    <div id="why"></div>
+    <div class="acts"><button class="btn go" id="bBack" hidden>Back to the board</button><button class="btn" id="bSkip">Skip</button></div>`;
+  $("#ov").hidden = false;
+  const back = () => { $("#ov").hidden = true; measure(); };
+  for (const b of document.querySelectorAll(".choice")) b.onclick = () => {
+    const o = c.options[+b.dataset.i];
+    b.classList.add(o[1] ? "right" : "wrong");
+    $("#why").innerHTML = `<div class="why ${o[1] ? "" : "no"}">${o[2]}</div>`;
+    if (o[1]) { document.querySelectorAll(".choice").forEach(x => x.disabled = true); $("#bBack").hidden = false; $("#bSkip").hidden = true;
+      $("#bBack").textContent = key === "deploy" || key === "leak" ? "Back to the board (use the red Roll back button)" : "Back to the board, then add it"; }
+  };
+  $("#bBack").onclick = back; $("#bSkip").onclick = back;
+}
+function setTeach(on) {
+  teachOn = on; store.set("loadrush-teach", on);
+  $("#teachBtn").textContent = "Teach: " + (on ? "on" : "off"); $("#teachBtn").classList.toggle("on", on);
+}
+
+/* ================================================================== flow of the game */
+function setup(level) {
+  L = level; S = newState(); armed = null; parts = [];
+  for (const g of L.given) addPiece(g, { instant: true, fixed: g === "db" });
+  $("#pager").innerHTML = "";
+  renderTray(); renderBoard(); updateRollback(); measure();
+  step(0.001); updateLive(); pushHist();
+}
+function load(level) {
+  setup(level);
+  $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
+  if (teachOn) { S.speed = 0.5; $("#speed").textContent = "½×"; } else $("#speed").textContent = "1×";
+  if (L.sandbox) { log("info", "Sandbox: move the sliders, add parts, and break things with the buttons on the left."); $("#ov").hidden = true; setRunning(true); measure(); return; }
+  log("info", L.task);
+  showBrief();
+}
+function setRunning(on) {
+  if (!S || S.over) return;
+  S.running = on;
+  $("#play").textContent = on ? "Pause" : (S.t > 0.01 ? "Resume" : "Start shift");
+  $("#play").classList.toggle("go", !on);
+}
+function end(win) {
+  S.over = true; S.running = false; updateRollback();
+  $("#play").textContent = "Shift over"; $("#play").classList.remove("go");
+  const avgSpend = S.t ? S.spendSec / S.t : 0;
+  let st = 0;
+  if (win) { st = 1; if (S.budget >= 40) st = 2; if (S.budget >= 70 && avgSpend <= L.cap * 0.85) st = 3; }
+  if (st > (stars[L.id] || 0)) { stars[L.id] = st; store.set("loadrush-stars", stars); }
+  const next = LEVELS[LEVELS.indexOf(L) + 1];
+  const errPct = S.total ? (100 * S.failed / S.total) : 0;
+  $("#sheet").innerHTML = `
+    <div class="kick">${win ? "Shift complete" : "Site down"}</div>
+    <h2>${win ? "You kept it up." : "The error budget ran out."}</h2>
+    ${win ? `<div class="stars" aria-label="${st} of 3 stars">${"★".repeat(st)}${"☆".repeat(3 - st)}</div>` : `<p>The site failed too many users for too long. Read the coach notes in the pager, or turn on Teach mode, change the setup, and try again.</p>`}
+    <div class="stats">
+      <div><small>Budget left</small><b>${Math.ceil(S.budget)}%</b></div>
+      <div><small>Peak traffic</small><b>${Math.round(S.peak)}/s</b></div>
+      <div><small>Worst p95</small><b>${Math.round(S.worstP95)} ms</b></div>
+      <div><small>Failed requests</small><b>${errPct.toFixed(2)}%</b></div>
+      <div><small>Average spend</small><b>$${avgSpend.toFixed(1)}/h</b></div>
+    </div>
+    ${win && st < 3 ? `<p class="real">3 stars: finish with 70%+ budget and average spend under $${Math.floor(L.cap * 0.85)}/h.</p>` : ""}
+    <div class="label" style="margin-top:14px">What this shift teaches</div>
+    <ul>${L.learned.map(x => `<li>${x.replace(/`([^`]+)`/g, "<code>$1</code>")}</li>`).join("")}</ul>
+    ${role !== "mid" && L.staff ? `<div class="label" style="margin-top:14px">Staff-level questions to discuss</div><ul>${L.staff.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+    ${role === "principal" && L.principal ? `<div class="label" style="margin-top:14px">Principal-level questions to discuss</div><ul>${L.principal.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
+    <div class="acts">
+      ${win && next ? `<button class="btn go" id="bNext">Next shift: ${next.name}</button>` : ""}
+      <button class="btn ${win && next ? "" : "go"}" id="bRetry">Try again</button>
+      <button class="btn" id="bMenu">All shifts</button>
+    </div>`;
+  $("#ov").hidden = false;
+  if ($("#bNext")) $("#bNext").onclick = () => load(next);
+  $("#bRetry").onclick = () => load(L);
+  $("#bMenu").onclick = showMenu;
+  log(win ? "good" : "page", win ? "Shift complete." : "Error budget is gone. Site down.");
+}
+function showBrief() {
+  const fresh = L.fresh.map(t => PARTS[t]);
+  $("#sheet").innerHTML = `
+    <div class="kick">Shift ${LEVELS.indexOf(L) + 1} of ${LEVELS.length} · ${Math.floor(L.duration / 60)}:${String(L.duration % 60).padStart(2, "0")} long · spend limit $${L.cap}/h</div>
+    <h2>${L.name}</h2>
+    <p>${L.brief}</p>
+    <p><b>${L.task}</b></p>
+    ${fresh.length ? `<div class="label" style="margin-top:14px">New parts in your tray</div>
+      <ul>${fresh.map(p => `<li><b>${p.name}</b> ($${p.cost}/h, ${p.boot}s to start). ${p.what} <span class="real">In real life: <b>${p.real}</b>.</span></li>`).join("")}</ul>` : ""}
+    <p class="real">The game starts paused. Drag parts in first if you want. Amber outlines mark empty columns.${teachOn ? " Teach mode is on: the game pauses to explain when something goes wrong." : ""}</p>
+    <div class="acts"><button class="btn go" id="bGo">Look at the board</button><button class="btn" id="bMenu2">All shifts</button></div>`;
+  $("#ov").hidden = false;
+  $("#bGo").onclick = () => { $("#ov").hidden = true; measure(); };
+  $("#bMenu2").onclick = showMenu;
+}
+function showMenu() {
+  if (S) setRunning(false);
+  const unlocked = i => i === 0 || (stars[LEVELS[i - 1].id] || 0) > 0;
+  $("#sheet").innerHTML = `
+    <div class="kick">Night shift, site reliability</div>
+    <h2>Keep the site up while the traffic changes.</h2>
+    <p>Real traffic flows through your system in real time. Drag the missing parts onto the board, watch response time, errors and cost, and handle what breaks. Each shift teaches one fix that DevOps teams use.</p>
+    <ul class="howto">
+      <li><b>Watch</b> the dots: blue are users, purple are bots, red are failed requests.</li>
+      <li><b>Drag</b> parts from the left onto the board. Each costs money per hour and takes a few seconds to start.</li>
+      <li><b>Keep</b> the error budget above zero until the shift ends. Click any column or chart to see why the numbers are what they are.</li>
+    </ul>
+    <div class="label" style="margin-top:12px">Who is playing?</div>
+    <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
+    <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>runs at half speed and pauses to explain each problem, with a diagram and a question</small></label>
+    <div class="levels">${LEVELS.map((lv, i) => `
+      <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
+        <span class="n">SHIFT ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
+        <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}</span>
+      </button>`).join("")}
+      <button class="lv sand" data-i="sandbox"><span class="n">FREE PLAY</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
+    </div>`;
+  $("#ov").hidden = false;
+  $("#teachSw").onchange = e => setTeach(e.target.checked);
+  for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); showMenu(); };
+  for (const b of document.querySelectorAll(".lv")) b.onclick = () => load(b.dataset.i === "sandbox" ? SANDBOX : LEVELS[+b.dataset.i]);
+}
+
+/* ================================================================== drag and drop (mouse, pen, touch) */
+let drag = null;
+function zoneAt(x, y) { const el = document.elementFromPoint(x, y); const z = el && el.closest(".zone[data-z]"); return z && z.dataset.z !== "users" ? z : null; }
+function clearHi() { document.querySelectorAll(".zone").forEach(z => z.classList.remove("drop-ok", "drop-bad")); }
+$("#tray").addEventListener("pointerdown", e => {
+  const card = e.target.closest(".card"); if (!card || !S || S.over) return;
+  drag = { type: card.dataset.type, x0: e.clientX, y0: e.clientY, ghost: null };
+  card.setPointerCapture(e.pointerId);
+});
+$("#tray").addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (!drag.ghost && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) {
+    drag.ghost = document.createElement("div"); drag.ghost.className = "ghost";
+    drag.ghost.textContent = PARTS[drag.type].name; document.body.appendChild(drag.ghost);
+  }
+  if (drag.ghost) {
+    drag.ghost.style.left = e.clientX + "px"; drag.ghost.style.top = e.clientY + "px";
+    clearHi(); const z = zoneAt(e.clientX, e.clientY);
+    if (z) z.classList.add(z.dataset.z === PARTS[drag.type].zone ? "drop-ok" : "drop-bad");
+  }
+});
+$("#tray").addEventListener("pointerup", e => {
+  if (!drag) return;
+  const d = drag; drag = null; clearHi();
+  if (d.ghost) { d.ghost.remove(); const z = zoneAt(e.clientX, e.clientY); if (z) place(d.type, z.dataset.z); }
+  else { armed = armed === d.type ? null : d.type; renderTray(); if (armed) toast(`${PARTS[armed].name} picked up. Click a column on the board to place it.`); }
+});
+$("#tray").addEventListener("pointercancel", () => { if (drag && drag.ghost) drag.ghost.remove(); drag = null; clearHi(); });
+$("#tray").addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const card = e.target.closest(".card"); if (!card) return; e.preventDefault();
+  armed = card.dataset.type; renderTray(); toast(`${PARTS[armed].name} picked up. Click a column on the board to place it.`);
+});
+$("#board").addEventListener("click", e => {
+  const z = e.target.closest(".zone[data-z]"); if (!z) return;
+  if (armed && z.dataset.z !== "users") { if (place(armed, z.dataset.z) !== false) { armed = null; renderTray(); } return; }
+  inspect(z.dataset.z);
+});
+document.querySelectorAll(".mon[data-insp]").forEach(el => el.addEventListener("click", () => inspect(el.dataset.insp)));
+
+/* sandbox controls */
+const SLIDERS = [["sbUsers", "legit", v => v, v => n0(v)], ["sbBots", "bots", v => v, v => n0(v)], ["sbStatic", "staticFrac", v => v / 100, v => v + "%"],
+  ["sbReads", "readFrac", v => v / 100, v => v + "%"], ["sbHeavy", "heavyFrac", v => v / 100, v => v + "%"], ["sbPay", "payFrac", v => v / 100, v => v + "%"]];
+for (const [id, key, conv, show] of SLIDERS) {
+  const el = $("#" + id), out = $("#" + id + "V");
+  const sync = () => { sandboxTraffic[key] = conv(+el.value); out.textContent = show(+el.value); };
+  el.addEventListener("input", sync); sync();
+}
+document.querySelectorAll("[data-ev]").forEach(b => b.addEventListener("click", () => { if (S && L.sandbox) { fire(b.dataset.ev); renderBoard(); } }));
+
+/* ================================================================== controls + loop */
+$("#play").onclick = () => { if (S && !S.over) setRunning(!S.running); };
+$("#speed").onclick = () => { if (!S) return; S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 0.5 : 1; $("#speed").textContent = (S.speed === 0.5 ? "½" : S.speed) + "×"; };
+$("#teachBtn").onclick = () => setTeach(!teachOn);
+$("#rollback").onclick = rollback;
+$("#menu").onclick = showMenu;
+document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
+addEventListener("resize", measure);
+
+let last = performance.now(), acc = 0, histAcc = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (S && S.running && !S.over) {
+    acc += dt * S.speed;
+    while (acc >= 0.1 && S.running) { step(0.1); acc -= 0.1; histAcc += 0.1; if (histAcc >= 0.5) { histAcc = 0; pushHist(); } }
+    updateLive(); spawn(dt * S.speed);
+  }
+  if (S) drawFlow(dt, S.running && !S.over);
+  requestAnimationFrame(frame);
+}
+// a live board sits behind the menu so the first frame is not empty
+setTeach(teachOn);
+setup(LEVELS[0]);
+showMenu();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
