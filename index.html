@@ -53,8 +53,34 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 @keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 30%, transparent); } }
 
 /* stage */
-.stage { display: grid; grid-template-columns: 200px minmax(0, 1fr) 300px; gap: 16px; margin-top: 16px; }
-@media (max-width: 1180px) { .stage { grid-template-columns: 190px minmax(0, 1fr); } .monitors { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); } }
+.stage { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; margin-top: 16px; max-width: 1500px; margin-inline: auto; }
+.centre { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.guide { display: flex; gap: 14px; align-items: center; padding: 14px 18px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-2); border-left: 5px solid var(--signal); }
+.guide.ok { border-left-color: var(--ok); } .guide.warn { border-left-color: var(--warn); } .guide.bad { border-left-color: var(--bad); }
+.gicon { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font: 700 18px var(--display); background: var(--panel-2); color: var(--signal); }
+.guide.ok .gicon { color: var(--ok); } .guide.warn .gicon { color: var(--warn); } .guide.bad .gicon { color: var(--bad); }
+.gtitle { font: 700 17px var(--display); letter-spacing: .02em; }
+.gtext { font-size: 15px; color: var(--ink); max-width: 80ch; }
+.gtext b { color: var(--signal); }
+.health { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 10px; }
+@media (max-width: 900px) { .health { grid-template-columns: 1fr 1fr; } }
+.tile { text-align: left; display: flex; flex-direction: column; gap: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.tile:hover { border-color: var(--line-2); }
+.tile .val { font: 500 22px var(--mono); font-variant-numeric: tabular-nums; }
+.tile .val em { font: 600 13px var(--body); font-style: normal; color: var(--ok); }
+.tile .hint { font-size: 11.5px; color: var(--ink-faint); }
+.tile canvas { width: 100%; height: 30px; display: block; }
+.tile .bar { display: block; height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
+.tile .bar i { display: block; height: 100%; background: var(--ok); transition: width .3s, background .3s; }
+.details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 900px) { .details { grid-template-columns: 1fr; } }
+.zsub { font-size: 11px; color: var(--ink-faint); margin-top: -4px; }
+.paused { position: absolute; inset: auto 0 18px 0; margin: 0 auto; width: max-content; max-width: 90%; z-index: 3; display: flex; gap: 10px; align-items: center;
+  background: var(--panel-2); border: 1px solid var(--signal); border-radius: 99px; padding: 8px 18px; font-size: 14px; pointer-events: none; }
+.paused b { font: 700 14px var(--display); color: var(--signal); letter-spacing: .06em; text-transform: uppercase; }
+.btn.big { font-size: 15px; padding: 9px 18px; }
+.btn.go.ready { animation: glow 1.4s infinite; }
+@keyframes glow { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--signal) 30%, transparent); } }
 @media (max-width: 760px) { .stage { grid-template-columns: minmax(0, 1fr); } .tray { flex-direction: row; overflow-x: auto; } .tray .card { min-width: 150px; } }
 .label { font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); }
 
@@ -65,10 +91,11 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .card:hover { border-color: var(--line-2); background: var(--panel-2); }
 .card.armed { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal) inset; }
 .card.new::after { content: "NEW"; grid-column: 2; font: 600 9px var(--mono); color: var(--warn); letter-spacing: .1em; }
-.tag { grid-row: span 2; width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
+.tag { grid-row: span 3; width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
   font: 700 12px var(--display); letter-spacing: .03em; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--signal); }
-.card .nm { font-weight: 600; font-size: 13px; }
-.card .meta { font: 11px var(--mono); color: var(--ink-dim); }
+.card .nm { font-weight: 600; font-size: 14px; }
+.card .meta { font: 11px var(--mono); color: var(--ink-faint); }
+.card .what { grid-column: 2; font-size: 12px; color: var(--ink-dim); line-height: 1.3; }
 .tray-note { font-size: 12px; color: var(--ink-faint); margin-top: 4px; }
 
 /* sandbox controls */
@@ -82,7 +109,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 /* board */
 .board-wrap { align-self: start; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background:
   radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 22px 22px, var(--panel); }
-.board { position: relative; min-width: 780px; height: 480px; display: grid; grid-template-columns: 74px 1fr 1fr 1.3fr 1.2fr 1.2fr;
+.board { position: relative; min-width: 640px; height: 380px; display: grid; grid-template-columns: 74px 1fr 1fr 1.3fr 1.2fr 1.2fr;
   grid-template-rows: 1fr 1fr; gap: 14px; padding: 18px; }
 #flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .zone { position: relative; z-index: 1; border: 1px dashed var(--line-2); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
@@ -94,8 +121,6 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .zone[data-z="cache"] { grid-column: 5; grid-row: 1; }
 .zone[data-z="jobs"]  { grid-column: 5; grid-row: 2; }
 .zone[data-z="data"]  { grid-column: 6; grid-row: 1 / 3; }
-.zone.need { border-color: var(--warn); border-style: dashed; }
-.zone.need .zhead::after { content: "missing piece?"; font: 10px var(--mono); color: var(--warn); margin-left: auto; }
 .zone.inspected { box-shadow: 0 0 0 2px var(--signal); }
 .zone.drop-ok { border: 1px solid var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
 .zone.drop-bad { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
@@ -145,7 +170,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .insp .ir.sum b { color: var(--signal); }
 .insp .ir.badv b { color: var(--bad); }
 .insp .note { font-size: 12px; color: var(--ink-dim); line-height: 1.4; margin-top: 4px; }
-.pager { max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.pager { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .msg { font-size: 12.5px; line-height: 1.4; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); border-left: 3px solid var(--line-2); }
 .msg .when { font: 10px var(--mono); color: var(--ink-faint); margin-right: 6px; }
 .msg.page { border-left-color: var(--bad); } .msg.coach { border-left-color: var(--warn); } .msg.good { border-left-color: var(--ok); } .msg.info { border-left-color: var(--signal); }
@@ -221,29 +246,28 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
   <div class="brand">Load<b>Rush</b></div>
   <div class="lvname" id="lvname">Choose a shift</div>
   <div class="hstats">
-    <div class="hstat"><small>Shift clock</small><span id="clock">0:00 / 0:00</span></div>
-    <div class="hstat"><small>Spend</small><span id="spend">$0 / $0 an hour</span></div>
+    <div class="hstat"><small>Time</small><span id="clock">0:00 / 0:00</span></div>
+    <div class="hstat"><small>Cost</small><span id="spend">$0 / $0 an hour</span></div>
     <div class="ctrl">
       <button class="btn danger" id="rollback" hidden>Roll back release</button>
-      <button class="btn go" id="play">Start shift</button>
+      <button class="btn go big" id="play">▶ Start shift</button>
       <button class="btn" id="speed" title="Game speed">1×</button>
-      <button class="btn" id="teachBtn" title="Pause and explain when something goes wrong">Teach: off</button>
-      <button class="btn" id="menu">Shifts</button>
+      <button class="btn" id="menu">Menu</button>
     </div>
   </div>
 </header>
 
 <div class="stage">
   <aside>
-    <div class="label" style="margin-bottom:8px">Parts. Drag onto the board</div>
+    <div class="label" style="margin-bottom:8px">Parts · drag one onto the board</div>
     <div class="tray" id="tray"></div>
-    <p class="tray-note">Or click a part, then a column. × removes a part. Click any column or chart to see its numbers.</p>
+    <p class="tray-note">You can also click a part, then click a column. The × on a part removes it.</p>
     <div class="sandbox" id="sandbox" hidden>
       <div class="label">Sandbox traffic</div>
-      <label class="sl" for="sbUsers">Real users a second <b id="sbUsersV"></b><input type="range" id="sbUsers" min="0" max="1500" step="10" value="300"></label>
+      <label class="sl" for="sbUsers">Visitors a second <b id="sbUsersV"></b><input type="range" id="sbUsers" min="0" max="1500" step="10" value="300"></label>
       <label class="sl" for="sbBots">Bots a second <b id="sbBotsV"></b><input type="range" id="sbBots" min="0" max="3000" step="50" value="0"></label>
       <label class="sl" for="sbStatic">Images, CSS, JS <b id="sbStaticV"></b><input type="range" id="sbStatic" min="0" max="80" step="5" value="30"></label>
-      <label class="sl" for="sbReads">Reads (vs writes) <b id="sbReadsV"></b><input type="range" id="sbReads" min="50" max="95" step="5" value="85"></label>
+      <label class="sl" for="sbReads">Reading (vs saving) data <b id="sbReadsV"></b><input type="range" id="sbReads" min="50" max="95" step="5" value="85"></label>
       <label class="sl" for="sbHeavy">Slow jobs (checkouts) <b id="sbHeavyV"></b><input type="range" id="sbHeavy" min="0" max="25" step="1" value="0"></label>
       <label class="sl" for="sbPay">Payment calls <b id="sbPayV"></b><input type="range" id="sbPay" min="0" max="10" step="1" value="0"></label>
       <div class="label" style="margin-top:4px">Break something</div>
@@ -258,34 +282,54 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
     </div>
   </aside>
 
-  <div class="board-wrap">
-    <div class="board" id="board">
-      <canvas id="flow"></canvas>
-      <div class="zone users" data-z="users">
-        <div class="big mono" id="uRps">0</div><div class="small">users/s</div>
-        <div class="small botc mono" id="uBots"></div>
-      </div>
-      <div class="zone" data-z="edge"><div class="zhead"><span class="zname">Edge</span></div><div class="chips"></div><div class="load"></div></div>
-      <div class="zone" data-z="entry"><div class="zhead"><span class="zname">Entry</span></div><div class="chips"></div><div class="load"></div></div>
-      <div class="zone" data-z="app"><div class="zhead"><span class="zname">App tier</span></div><div class="chips"></div><div class="load"></div></div>
-      <div class="zone" data-z="cache"><div class="zhead"><span class="zname">Cache</span></div><div class="chips"></div><div class="load"></div></div>
-      <div class="zone" data-z="jobs"><div class="zhead"><span class="zname">Background jobs</span></div><div class="chips"></div><div class="load"></div></div>
-      <div class="zone" data-z="data"><div class="zhead"><span class="zname">Database</span></div><div class="chips"></div><div class="load"></div></div>
+  <main class="centre">
+    <div class="guide" id="guide" role="status" aria-live="polite">
+      <div class="gicon" id="gicon">▶</div>
+      <div class="gbody"><div class="gtitle" id="gtitle">What to do now</div><div class="gtext" id="gtext"></div></div>
     </div>
-  </div>
 
-  <div class="monitors">
-    <div class="mon budget click" data-insp="budget">
-      <div class="row"><span class="label">Error budget</span><span class="val" id="budgetV">100%</span></div>
-      <div class="bar"><i id="budgetBar" style="width:100%"></i></div>
-      <div class="slo">Goal: under 1% errors and p95 under 800 ms.</div>
+    <div class="health">
+      <button class="tile" data-insp="budget">
+        <span class="label">Site health</span><span class="val" id="budgetV">100%</span>
+        <span class="bar"><i id="budgetBar" style="width:100%"></i></span>
+        <span class="hint">Drops when pages fail or load slowly. At 0% you lose.</span>
+      </button>
+      <button class="tile" data-insp="p95">
+        <span class="label">Page speed</span><span class="val"><span id="p95V">0 ms</span> <em id="p95W">fast</em></span>
+        <canvas id="cP95"></canvas><span class="hint">Slow means over 800 ms.</span>
+      </button>
+      <button class="tile" data-insp="err">
+        <span class="label">Failed pages</span><span class="val" id="errV">0.0%</span>
+        <canvas id="cErr"></canvas><span class="hint">Keep it under 1%.</span>
+      </button>
+      <button class="tile" data-insp="users">
+        <span class="label">Visitors a second</span><span class="val" id="rpsV">0</span>
+        <canvas id="cRps"></canvas><span class="hint">Blue: people. Purple: bots.</span>
+      </button>
     </div>
-    <div class="mon click" data-insp="users"><div class="row"><span class="label">Requests per second</span><span class="val" id="rpsV">0</span></div><canvas id="cRps"></canvas></div>
-    <div class="mon click" data-insp="p95"><div class="row"><span class="label">p95 response time</span><span class="val" id="p95V">0 ms</span></div><canvas id="cP95"></canvas></div>
-    <div class="mon click" data-insp="err"><div class="row"><span class="label">Errors</span><span class="val" id="errV">0.0%</span></div><canvas id="cErr"></canvas></div>
-    <div class="mon"><span class="label">Inspector · the numbers behind it</span><div class="insp" id="insp"></div></div>
-    <div class="mon"><span class="label">Pager</span><div class="pager" id="pager"></div></div>
-  </div>
+
+    <div class="board-wrap">
+      <div class="board" id="board">
+        <canvas id="flow"></canvas>
+        <div class="zone users" data-z="users">
+          <div class="big mono" id="uRps">0</div><div class="small">visitors<br>a second</div>
+          <div class="small botc mono" id="uBots"></div>
+        </div>
+        <div class="zone" data-z="edge"><div class="zhead"><span class="zname">Edge</span></div><div class="zsub">Front door: filters and serves files</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="entry"><div class="zhead"><span class="zname">Entry</span></div><div class="zsub">Shares visitors between servers</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="app"><div class="zhead"><span class="zname">App servers</span></div><div class="zsub">Run your website's code</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="cache"><div class="zhead"><span class="zname">Cache</span></div><div class="zsub">Remembers common answers</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="jobs"><div class="zhead"><span class="zname">Background jobs</span></div><div class="zsub">Does slow work later</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="data"><div class="zhead"><span class="zname">Database</span></div><div class="zsub">Stores your data</div><div class="chips"></div><div class="load"></div></div>
+        <div class="paused" id="paused"><b>Paused</b><span id="pausedText">Add parts if you want, then press ▶ Start shift.</span></div>
+      </div>
+    </div>
+
+    <div class="details">
+      <div class="mon"><span class="label">Why? The numbers</span><div class="insp" id="insp"></div></div>
+      <div class="mon"><span class="label">What happened</span><div class="pager" id="pager"></div></div>
+    </div>
+  </main>
 </div>
 
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
@@ -295,31 +339,31 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 "use strict";
 /* ================================================================== parts */
 const PARTS = {
-  lb:      { name: "Load balancer", tag: "LB",  zone: "entry", cost: 2, boot: 2, max: 1, real: "AWS ALB, nginx, a Kubernetes Service",
+  lb: { short: "Shares visitors between servers",      name: "Load balancer", tag: "LB",  zone: "entry", cost: 2, boot: 2, max: 1, real: "AWS ALB, nginx, a Kubernetes Service",
              what: "Spreads requests across every healthy app server. Without it, only one server gets traffic." },
-  app:     { name: "App server",    tag: "APP", zone: "app",   cost: 4, boot: 4, max: 9, real: "an EC2 instance, a Kubernetes Pod",
+  app: { short: "Runs your site. Handles 150 visitors a second",     name: "App server",    tag: "APP", zone: "app",   cost: 4, boot: 4, max: 9, real: "an EC2 instance, a Kubernetes Pod",
              what: "Runs your code. Each one handles about 150 requests a second. New servers alternate between zone A and zone B." },
-  auto:    { name: "Autoscaler",    tag: "AS",  zone: "app",   cost: 0, boot: 1, max: 1, real: "EC2 Auto Scaling, Kubernetes HPA",
+  auto: { short: "Adds servers when they get busy",    name: "Autoscaler",    tag: "AS",  zone: "app",   cost: 0, boot: 1, max: 1, real: "EC2 Auto Scaling, Kubernetes HPA",
              what: "Adds app servers when they are busy and removes extra ones when quiet. Stays inside your spend limit." },
-  canary:  { name: "Canary deploys", tag: "CY", zone: "app",   cost: 0, boot: 1, max: 1, real: "Argo Rollouts, CodeDeploy canary",
+  canary: { short: "Tries new versions on 10% of visitors first",  name: "Canary deploys", tag: "CY", zone: "app",   cost: 0, boot: 1, max: 1, real: "Argo Rollouts, CodeDeploy canary",
              what: "New versions go to one server (about 10% of users) first. If errors or memory jump, it rolls back by itself." },
-  breaker: { name: "Timeouts + breaker", tag: "CB", zone: "app", cost: 0, boot: 1, max: 1, real: "a client timeout, resilience4j, Envoy outlier detection",
+  breaker: { short: "Gives up quickly on slow outside services", name: "Timeouts + breaker", tag: "CB", zone: "app", cost: 0, boot: 1, max: 1, real: "a client timeout, resilience4j, Envoy outlier detection",
              what: "Stops waiting on a slow outside service after 1 second, then stops calling it for a while. Requests fail fast instead of piling up." },
-  cache:   { name: "Cache",         tag: "C",   zone: "cache", cost: 3, boot: 3, max: 1, real: "Redis, ElastiCache",
+  cache: { short: "Remembers common answers",   name: "Cache",         tag: "C",   zone: "cache", cost: 3, boot: 3, max: 1, real: "Redis, ElastiCache",
              what: "Keeps answers to common reads in memory. Once warm, about 75% of reads never reach the database." },
-  queue:   { name: "Queue",         tag: "Q",   zone: "jobs",  cost: 1, boot: 2, max: 1, real: "SQS, RabbitMQ",
+  queue: { short: "Holds slow jobs to do later",   name: "Queue",         tag: "Q",   zone: "jobs",  cost: 1, boot: 2, max: 1, real: "SQS, RabbitMQ",
              what: "Slow jobs (emails, image resizing, payments to retry) wait here, so the user gets an answer right away. Needs workers." },
-  worker:  { name: "Worker",        tag: "W",   zone: "jobs",  cost: 2, boot: 3, max: 6, real: "an ECS task, a Kubernetes Deployment",
+  worker: { short: "Does the jobs in the queue",  name: "Worker",        tag: "W",   zone: "jobs",  cost: 2, boot: 3, max: 6, real: "an ECS task, a Kubernetes Deployment",
              what: "Takes jobs from the queue and runs them in the background, about 15 jobs a second each." },
-  replica: { name: "Read replica",  tag: "RR",  zone: "data",  cost: 5, boot: 8, max: 4, real: "an RDS read replica",
+  replica: { short: "Extra copy of the data, for reading", name: "Read replica",  tag: "RR",  zone: "data",  cost: 5, boot: 8, max: 4, real: "an RDS read replica",
              what: "A copy of the database that answers reads (300/s each). Writes still go to the primary. Slow to start." },
-  standby: { name: "Standby DB",    tag: "SB",  zone: "data",  cost: 6, boot: 10, max: 1, real: "RDS Multi-AZ standby",
+  standby: { short: "Takes over if the database dies", name: "Standby DB",    tag: "SB",  zone: "data",  cost: 6, boot: 10, max: 1, real: "RDS Multi-AZ standby",
              what: "A live copy of the primary in another zone. It answers nothing until the primary dies, then takes over in a few seconds." },
-  cdn:     { name: "CDN",           tag: "CDN", zone: "edge",  cost: 3, boot: 5, max: 1, real: "CloudFront, Cloudflare",
+  cdn: { short: "Serves images close to visitors",     name: "CDN",           tag: "CDN", zone: "edge",  cost: 3, boot: 5, max: 1, real: "CloudFront, Cloudflare",
              what: "Serves images, CSS and JS from servers near the user, so those requests never reach your app." },
-  waf:     { name: "Rate limiter",  tag: "RL",  zone: "edge",  cost: 1, boot: 1, max: 1, real: "AWS WAF rate rules, nginx limit_req",
+  waf: { short: "Blocks floods of bot traffic",     name: "Rate limiter",  tag: "RL",  zone: "edge",  cost: 1, boot: 1, max: 1, real: "AWS WAF rate rules, nginx limit_req",
              what: "Blocks clients that send far too many requests, such as bots. Real users are not affected." },
-  db:      { name: "Primary DB",    tag: "DB",  zone: "data",  cost: 6, boot: 0, max: 1, real: "RDS PostgreSQL",
+  db: { short: "Stores your data",      name: "Primary DB",    tag: "DB",  zone: "data",  cost: 6, boot: 0, max: 1, real: "RDS PostgreSQL",
              what: "Your one source of truth. Handles about 400 reads + writes a second." },
 };
 const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
@@ -332,7 +376,7 @@ const wave = (t, start, end, peak, edge = 4) => t < start || t > end ? 0 : peak 
 const T = (o) => Object.assign({ legit: 0, bots: 0, staticFrac: 0, readFrac: 0.85, heavyFrac: 0, payFrac: 0 }, o);
 
 const LEVELS = [
-  { id: "launch", staff: ["The app keeps nothing in memory between requests, so copies are interchangeable. What breaks if it kept user sessions in memory?", "How much spare capacity do you keep, and how do you decide? Spare capacity costs money every hour."], principal: ["Who decides what 'fast enough' means (the SLO), and how does that target change what teams build?", "Launch traffic is a guess. How do you set up a launch so a wrong guess is cheap?"],
+  { id: "launch", watch: "One App server handles about 150 visitors a second. Traffic will climb to about 340. Add parts, then press \u25b6 Start shift.", staff: ["The app keeps nothing in memory between requests, so copies are interchangeable. What breaks if it kept user sessions in memory?", "How much spare capacity do you keep, and how do you decide? Spare capacity costs money every hour."], principal: ["Who decides what 'fast enough' means (the SLO), and how does that target change what teams build?", "Launch traffic is a guess. How do you set up a launch so a wrong guess is cheap?"],
     name: "Launch Day", duration: 90, cap: 25,
     blurb: "One server, rising traffic.",
     brief: "Marketing just posted the launch. Traffic starts small and keeps climbing to about 340 users a second. Right now one app server does everything, and it handles about 150.",
@@ -343,7 +387,7 @@ const LEVELS = [
     learned: ["One server has a hard limit. More servers only help if something spreads the requests: the load balancer.",
               "Scaling out (more servers) is the normal fix for app code that keeps no data of its own.",
               "Hands-on: run three copies of an app behind a Kubernetes Service (kind on a laptop is enough) and watch requests spread."] },
-  { id: "sale", staff: ["Cache or replicas? The cache is cheaper but can show old prices. When is old data not OK?", "The autoscaler reacts after load rises. When should you add capacity before the event instead?"], principal: ["Marketing knew about the sale; the people running the system did not. What process fixes that?", "Who pays for capacity that sits idle all year so you survive one sale day?"],
+  { id: "sale", watch: "At 0:25 about 700 visitors a second arrive, mostly reading product pages. Keep an eye on the Database.", staff: ["Cache or replicas? The cache is cheaper but can show old prices. When is old data not OK?", "The autoscaler reacts after load rises. When should you add capacity before the event instead?"], principal: ["Marketing knew about the sale; the people running the system did not. What process fixes that?", "Who pays for capacity that sits idle all year so you survive one sale day?"],
     name: "Flash Sale", duration: 95, cap: 42,
     blurb: "A 40-second spike of shoppers.",
     brief: "At 0:25 an email goes out to every customer: 50% off for one hour. Expect about 700 users a second for 40 seconds, almost all of them reading product pages.",
@@ -355,7 +399,7 @@ const LEVELS = [
               "Read replicas also take reads off the primary, but they take time to start. Plan ahead.",
               "An autoscaler adds servers for you, but each new server needs a few seconds to boot.",
               "Hands-on: set up a Kubernetes HPA with metrics-server, then load-test it."] },
-  { id: "bots", staff: ["A limit per IP address can block a whole office or mobile network that shares one address. What else can you limit by?", "What does the CDN keep, for how long, and how do you clear it after a release?"], principal: ["Is bot traffic an engineering, security or business problem? Who owns it?", "Build your own protection or pay a vendor? What would change your answer?"],
+  { id: "bots", watch: "Something strange arrives at 0:18. Purple dots are bots.", staff: ["A limit per IP address can block a whole office or mobile network that shares one address. What else can you limit by?", "What does the CDN keep, for how long, and how do you clear it after a release?"], principal: ["Is bot traffic an engineering, security or business problem? Who owns it?", "Build your own protection or pay a vendor? What would change your answer?"],
     name: "Bot Swarm", duration: 100, cap: 40,
     blurb: "Traffic jumps 8× but sales do not.",
     brief: "Normal day, about 250 users a second, half of them loading images and CSS. Something odd is about to happen.",
@@ -368,7 +412,7 @@ const LEVELS = [
               "Adding servers to absorb bots costs money and still loses.",
               "Static files (images, CSS, JS) belong on a CDN. Your app should not spend time on them.",
               "Hands-on: put nginx limit_req, or an AWS WAF rate rule, in front of a test app and hit it with a load tool."] },
-  { id: "checkout", staff: ["With a queue, an email may arrive late or twice. How do you make jobs safe to run twice?", "What happens to a job that fails five times? Where does it go, and who looks at it?"], principal: ["Moving work to a queue changes what 'order placed' promises the customer. Who agrees to that?", "How would you spot slow work inside requests before customers do?"],
+  { id: "checkout", watch: "Every checkout does slow work while the visitor waits. Keep an eye on Page speed.", staff: ["With a queue, an email may arrive late or twice. How do you make jobs safe to run twice?", "What happens to a job that fails five times? Where does it go, and who looks at it?"], principal: ["Moving work to a queue changes what 'order placed' promises the customer. Who agrees to that?", "How would you spot slow work inside requests before customers do?"],
     name: "Checkout Crunch", duration: 100, cap: 40,
     blurb: "Checkout does slow work while the user waits.",
     brief: "Every checkout sends an email and resizes product photos before answering the user. Fine at night. Today 12-18% of requests are checkouts. Also, the server rack has been flaky.",
@@ -380,7 +424,7 @@ const LEVELS = [
               "Queues need workers. A queue with no workers just fills up.",
               "With a load balancer and more than one server, a crash costs capacity, not the whole site.",
               "Hands-on: create an SQS queue with a dead-letter queue in Terraform."] },
-  { id: "deploy", staff: ["What should a canary watch, and for how long, before the version goes to everyone?", "Some changes cannot be rolled back, like a database change. How do you release those safely?"], principal: ["Ban Friday releases, or make releases safe enough for any day?", "How do you measure release health across teams: how often you release, how often releases fail, how fast you recover?"],
+  { id: "deploy", watch: "New versions go out at 0:25 and 1:10. If failed pages jump, a red Roll back button appears at the top.", staff: ["What should a canary watch, and for how long, before the version goes to everyone?", "Some changes cannot be rolled back, like a database change. How do you release those safely?"], principal: ["Ban Friday releases, or make releases safe enough for any day?", "How do you measure release health across teams: how often you release, how often releases fail, how fast you recover?"],
     name: "Friday Deploy", duration: 100, cap: 40,
     blurb: "A release breaks checkout. Twice.",
     brief: "The team is releasing version 2.5 at 0:25 and 2.6 at 1:10. Nobody ran the full test suite. If a release is bad, a red Roll back button appears at the top. Rolling back takes 5 seconds.",
@@ -391,7 +435,7 @@ const LEVELS = [
     learned: ["Most outages start with a change. A fast rollback is the first fix, before any debugging.",
               "A canary sends a new version to a small slice of users first, so a bad release hurts 10% for a few seconds instead of everyone.",
               "Hands-on: break a Kubernetes Deployment on purpose and fix it with `kubectl rollout undo`."] },
-  { id: "leak", staff: ["Which graph would have shown this within minutes of the release? Who gets alerted?", "A memory limit makes the system kill a leaking process. Is that good or bad here?"], principal: ["Restarting servers on a timer hides the symptom. How do you stop teams living with fixes like that?", "What should the incident review produce so a leak like this is caught before release next time?"],
+  { id: "leak", watch: "A new version goes out at 0:15. Keep an eye on the health % in the App servers column.", staff: ["Which graph would have shown this within minutes of the release? Who gets alerted?", "A memory limit makes the system kill a leaking process. Is that good or bad here?"], principal: ["Restarting servers on a timer hides the symptom. How do you stop teams living with fixes like that?", "What should the incident review produce so a leak like this is caught before release next time?"],
     name: "Memory Leak", duration: 110, cap: 45,
     blurb: "Servers slowly choke, then all restart at once.",
     brief: "Version 3.0 goes out at 0:15. It keeps a little more memory every second and never gives it back. When a server runs out, the system kills it (OOMKilled) and it restarts.",
@@ -403,7 +447,7 @@ const LEVELS = [
               "OOMKilled means the process used more memory than its limit. In Kubernetes you see it in `kubectl describe pod`.",
               "Watch the trend, not the moment: capacity falling slowly after a release points straight at the release.",
               "Hands-on: give a Pod a memory limit, push it over, and find OOMKilled in `kubectl describe pod`."] },
-  { id: "failover", staff: ["The standby takes over in seconds, but the app must reconnect. What in your app makes that fast or slow?", "When did you last test a failover for real? An untested standby is a hope, not a plan."], principal: ["How long can the business be down, and how much data can it lose? Who decides, and what does each step cost?", "Should you run planned failure tests in production?"],
+  { id: "failover", watch: "The database machine has disk warnings. What happens to your site if it dies?", staff: ["The standby takes over in seconds, but the app must reconnect. What in your app makes that fast or slow?", "When did you last test a failover for real? An untested standby is a hope, not a plan."], principal: ["How long can the business be down, and how much data can it lose? Who decides, and what does each step cost?", "Should you run planned failure tests in production?"],
     name: "Failover Night", duration: 100, cap: 52,
     blurb: "The main database dies.",
     brief: "The primary database host has shown disk warnings all week. If it dies with no standby, restoring from backup takes about 40 seconds, and every write fails until then.",
@@ -415,7 +459,7 @@ const LEVELS = [
               "Read replicas keep reads working, but writes need a primary. Replicas are not a backup plan for writes.",
               "Backups are for lost data; standbys are for lost machines. You want both.",
               "Hands-on: in Terraform, RDS Multi-AZ is one line: `multi_az = true`."] },
-  { id: "zone", staff: ["Spare capacity in both zones costs money. What is the cheapest setup that still survives losing a zone?", "Sometimes a whole region fails. When is a second region worth it?"], principal: ["Which systems must survive a whole region going down, and which can wait?", "How do you keep that list current as the business changes?"],
+  { id: "zone", watch: "Each server is in building A or B (see the tag). Building A loses power at 0:40.", staff: ["Spare capacity in both zones costs money. What is the cheapest setup that still survives losing a zone?", "Sometimes a whole region fails. When is a second region worth it?"], principal: ["Which systems must survive a whole region going down, and which can wait?", "How do you keep that list current as the business changes?"],
     name: "Zone Outage", duration: 100, cap: 50,
     blurb: "Half your servers vanish at once.",
     brief: "AWS regions are split into zones, separate buildings with their own power. Your servers alternate between zone A and zone B (see the A/B tag). Today zone A has power problems.",
@@ -426,7 +470,7 @@ const LEVELS = [
     learned: ["Spread servers across zones, and keep enough spare capacity that one zone can carry everything (N+1).",
               "An autoscaler replaces lost servers, but only after they are gone and the new ones have booted.",
               "Hands-on: build a VPC with subnets in two zones and spread an Auto Scaling group across both."] },
-  { id: "partner", staff: ["What is the right timeout? Too short fails good calls; too long ties up servers.", "Retries can make a struggling partner worse. How do waiting longer between retries, plus a little randomness, help?"], principal: ["What does the partner promise you, and what do you promise your own customers on top of it?", "Should a critical partner have a backup provider? What does that cost to keep ready?"],
+  { id: "partner", watch: "6% of visits call an outside payment service. At 0:30 it gets very slow.", staff: ["What is the right timeout? Too short fails good calls; too long ties up servers.", "Retries can make a struggling partner worse. How do waiting longer between retries, plus a little randomness, help?"], principal: ["What does the partner promise you, and what do you promise your own customers on top of it?", "Should a critical partner have a backup provider? What does that cost to keep ready?"],
     name: "Slow Partner", duration: 100, cap: 45,
     blurb: "The payment provider hangs.",
     brief: "6% of requests call an outside payment API. At 0:30 it starts taking 8 seconds to answer. Every app server waits on those calls, and the waiting fills them up.",
@@ -438,7 +482,7 @@ const LEVELS = [
               "A circuit breaker stops calling a failing service for a while, so requests fail fast.",
               "Failing fast still fails. Put the payments in a queue and retry later, and users see 'payment processing' instead of an error.",
               "Hands-on: add a timeout and retries with backoff to an HTTP call, and send failures to a queue."] },
-  { id: "friday", staff: ["Which part removed the most load per dollar today? Which would you cut first if the budget halved?", "What would you test before next Black Friday, and how?"], principal: ["How do you plan capacity for the busiest day of the year across many teams?", "What would make next year's Black Friday a boring day?"],
+  { id: "friday", watch: "Everything happens today. Build a solid setup before you press Start.", staff: ["Which part removed the most load per dollar today? Which would you cut first if the budget halved?", "What would you test before next Black Friday, and how?"], principal: ["How do you plan capacity for the busiest day of the year across many teams?", "What would make next year's Black Friday a boring day?"],
     name: "Black Friday", duration: 150, cap: 70,
     blurb: "Everything at once. Start from almost nothing.",
     brief: "The biggest day of the year. You start with one app server and the database. Expect static-heavy traffic, checkouts, a bot wave, crashes and a huge spike near the end.",
@@ -713,6 +757,45 @@ function autoscale(dt, uA, nApp) {
   }
 }
 
+const FIX = {
+  nolb: "Drag a <b>Load balancer</b> into the Entry column.",
+  bots: "Drag a <b>Rate limiter</b> into the Edge column.",
+  deploy: "Press the red <b>Roll back release</b> button at the top. Next time, add <b>Canary deploys</b> first.",
+  leak: "Press the red <b>Roll back release</b> button at the top.",
+  dbdown: "Nothing to do but wait now. Next time, add a <b>Standby DB</b> before it happens.",
+  azdown: "Add <b>App servers</b>. New ones go to building B.",
+  partner: "Add <b>Timeouts + breaker</b> to the App servers column. A <b>Queue</b> and a <b>Worker</b> help even more.",
+  static: "Drag a <b>CDN</b> into the Edge column.",
+  heavy: "Add a <b>Queue</b> and some <b>Workers</b> to Background jobs.",
+  qnow: "Add <b>Workers</b> to Background jobs.",
+  qbig: "Add more <b>Workers</b>.",
+  dbhot: "Add a <b>Cache</b>, or <b>Read replicas</b> in the Database column.",
+  apphot: "Add <b>App servers</b>, or an <b>Autoscaler</b>.",
+  autolb: "Drag a <b>Load balancer</b> into the Entry column.",
+};
+let guideKey = "";
+function updateGuide() {
+  if (!S || !L) return;
+  let cls = "", icon = "▶", title = "What to do now", text = "";
+  const started = S.t > 0.05;
+  if (S.over) { cls = S.budget > 0 ? "ok" : "bad"; icon = S.budget > 0 ? "✓" : "✕"; title = S.budget > 0 ? "Shift complete" : "The site went down"; text = "Open the Menu to try again or pick the next shift."; }
+  else if (!S.running && !started) { title = "Get ready"; text = L.sandbox ? "Move the sliders on the left and watch what changes." : (role === "mid" ? (L.watch || L.task) : L.task) + (role === "mid" ? "" : " Then press ▶ Start shift."); }
+  else if (!S.running) { title = "Paused"; text = "Press ▶ Resume when you are ready. You can add parts while paused."; }
+  else {
+    const prob = (S.problems || [])[0];
+    if (!prob) { cls = "ok"; icon = "✓"; title = "All good"; text = "Visitors are getting fast pages. Keep watching for changes."; }
+    else {
+      cls = S.budget < 40 ? "bad" : "warn"; icon = "!"; title = prob[1];
+      text = role === "mid" ? (FIX[prob[0]] || "") : role === "staff" ? "What would you change? Click a column to see its numbers." : "Site health is dropping. Find out why.";
+    }
+  }
+  const key = cls + title + text; if (key === guideKey) return; guideKey = key;
+  const g = $("#guide"); g.className = "guide " + cls;
+  $("#gicon").textContent = icon; $("#gtitle").textContent = title; $("#gtext").innerHTML = text;
+  const pz = $("#paused"); pz.hidden = S.running || S.over;
+  $("#pausedText").textContent = started ? "Press ▶ Resume to carry on." : "Add parts if you want, then press ▶ Start shift.";
+  $("#play").classList.toggle("ready", !S.running && !S.over);
+}
 function coach(dt) {
   const m = S.m, apps = count("app"), r = S.release;
   const tips = [
@@ -732,6 +815,7 @@ function coach(dt) {
     ["autolb", has("auto") && !m.lb, "The autoscaler is adding servers, but nothing sends them traffic."],
   ];
   const wait = teachOn ? 2 : ROLES[role].wait;
+  S.problems = tips.filter(([k, cond]) => cond && (S.tipHeld[k] || 0) > 1).map(([k, , text]) => [k, text]);
   for (const [k, cond, text] of tips) {
     S.tipHeld[k] = cond ? (S.tipHeld[k] || 0) + dt : 0;
     if (S.tipHeld[k] > wait && !S.tipsShown[k]) {
@@ -780,14 +864,14 @@ function inspector(z, m) {
     case "entry": return { title: "Entry", rows: [R("Load balancer", m.lb ? "yes" : "no", m.lb ? "" : "badv"), R("App servers running", n0(m.nApp)), R("Servers getting traffic", n0(m.used), m.used < m.nApp ? "badv" : "")],
       note: m.lb ? "The load balancer shares requests across every healthy server." : "Without a load balancer, all requests go to one server." };
     case "app": {
-      const rows = [R("Dynamic requests (users + bots)", n0(m.dynLegit - m.heavy + m.botsPass)), R("Static requests × 0.4", n0(m.staticToApp * 0.4)),
-        R(m.queue ? "Slow jobs × 0.3 (queued)" : "Slow jobs × 5 (done inline)", n0(m.queue ? m.heavy * 0.3 : m.heavy * 5))];
+      const rows = [R("Page requests (people + bots)", n0(m.dynLegit - m.heavy + m.botsPass)), R("Images and CSS (count as 0.4 each)", n0(m.staticToApp * 0.4)),
+        R(m.queue ? "Slow jobs (queued, count as 0.3 each)" : "Slow jobs (done while visitor waits, count as 5 each)", n0(m.queue ? m.heavy * 0.3 : m.heavy * 5))];
       if (m.payStuck) rows.push(R("Payment calls × 30 (stuck waiting)", n0(m.payStuck * 30), "badv"));
       rows.push(R("Total load", n0(m.appLoad), "sum"), R(`Capacity: ${m.used} × 150${m.health < 1 ? ` × ${pc(m.health)} health` : ""}`, n0(m.capA)),
         R("Load ÷ capacity", pc(m.uA), m.uA > 0.9 ? "badv" : ""), R("Requests failing here", pc(m.fA), m.fA > 0 ? "badv" : ""),
         R("App time: 30 ms ÷ (1 − load)", ms(m.appLat)));
       if (m.bugFail) rows.push(R("Failing from the bad release", pc(m.bugFail), "badv"));
-      return { title: "App tier", rows, note: "Response time grows like 1 ÷ (1 − load): at 50% busy it doubles, at 90% it is 10×. That curve is why you keep headroom." };
+      return { title: "App servers", rows, note: "Response time grows like 1 ÷ (1 − load): at 50% busy it doubles, at 90% it is 10×. That curve is why you keep headroom." };
     }
     case "cache": return { title: "Cache", rows: [R("Cache running", m.cache ? "yes" : "no"), R("Warm", pc(m.hit / 0.75 || 0)), R("Reads a second", n0(m.readsAll)),
       R("Answered by the cache", n0(m.readsAll * m.hit)), R("Sent to the database", n0(m.reads))], note: "A new cache starts empty and warms up over a few seconds. Once warm it answers 75% of reads." };
@@ -813,6 +897,7 @@ function inspector(z, m) {
 }
 function renderInspector() {
   if (!S || !S.m) return;
+  if (document.querySelector(`.zone[data-z="${inspected}"]`)?.hidden) inspected = "budget";
   const d = inspector(inspected, S.m);
   $("#insp").innerHTML = `<div class="it">${d.title}</div>` + d.rows.map(r => `<div class="ir ${r.cls}"><span>${r.k}</span><b>${r.v}</b></div>`).join("") + `<div class="note">${d.note}</div>`;
   document.querySelectorAll(".zone[data-z]").forEach(z => z.classList.toggle("inspected", z.dataset.z === inspected));
@@ -820,6 +905,21 @@ function renderInspector() {
 function inspect(z) { inspected = z; renderInspector(); }
 
 /* ================================================================== drawing */
+function layoutZones() {
+  const used = z => z === "users" || L.tray.some(t => PARTS[t].zone === z) || S.pieces.some(p => PARTS[p.type].zone === z);
+  const cols = [["users", "86px"], ["edge", "1fr"], ["entry", "1fr"], ["app", "1.3fr"], ["mid", "1.15fr"], ["data", "1.15fr"]];
+  const shown = cols.filter(([z]) => z === "mid" ? used("cache") || used("jobs") : used(z));
+  $("#board").style.gridTemplateColumns = shown.map(c => c[1]).join(" ");
+  for (const z of document.querySelectorAll(".zone[data-z]")) {
+    const id = z.dataset.z, colKey = id === "cache" || id === "jobs" ? "mid" : id;
+    const ci = shown.findIndex(c => c[0] === colKey);
+    z.hidden = ci < 0 || !used(id);
+    if (z.hidden) continue;
+    z.style.gridColumn = String(ci + 1);
+    const both = used("cache") && used("jobs");
+    z.style.gridRow = id === "cache" && both ? "1" : id === "jobs" && both ? "2" : "1 / 3";
+  }
+}
 function renderTray() {
   const tray = $("#tray"); tray.innerHTML = "";
   for (const type of L.tray) {
@@ -827,7 +927,7 @@ function renderTray() {
     const b = document.createElement("button");
     b.className = "card" + (L.fresh.includes(type) ? " new" : "") + (armed === type ? " armed" : "");
     b.dataset.type = type; b.title = `${p.what}\nIn real life: ${p.real}.`;
-    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="meta">$${p.cost}/h · ${p.boot}s start</span>`;
+    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="what">${p.short}</span><span class="meta">$${p.cost} an hour · ready in ${p.boot}s</span>`;
     tray.appendChild(b);
   }
   $("#sandbox").hidden = !L.sandbox;
@@ -872,7 +972,7 @@ function updateLive() {
   const m = S.m; if (!m) return;
   $("#uRps").textContent = Math.round(m.legit);
   $("#uBots").textContent = m.bots > 1 ? `+${Math.round(m.bots)} bots` : "";
-  setLoad("app", Math.min(m.uA, 1.5), `${m.nApp} up${!m.lb && m.nApp > 1 ? ", 1 used" : ""}${m.health < 0.99 ? ` · ${pc(m.health)} health` : ""}`);
+  setLoad("app", Math.min(m.uA, 1.5), `${m.nApp} running${!m.lb && m.nApp > 1 ? ", only 1 used" : ""}${m.health < 0.99 ? ` · ${pc(m.health)} health` : ""}`);
   setLoad("data", m.dbUp ? Math.min(m.uD, 1.5) : 1.5, !m.dbUp ? `DOWN ${Math.ceil(S.dbDown)}s` : m.reps ? `primary · replicas ${pc(m.uR)}` : "primary");
   setLoad("cache", has("cache") ? m.hit / 0.75 : null, "warm");
   setLoad("jobs", has("queue") ? Math.min(1, S.backlog / 3000) : null, `${Math.round(S.backlog)} waiting`);
@@ -886,6 +986,8 @@ function updateLive() {
   }
   $("#rpsV").textContent = Math.round(m.legit + m.bots);
   $("#p95V").textContent = Math.round(m.p95) + " ms"; $("#p95V").style.color = m.p95 > 800 ? "var(--bad)" : "var(--ink)";
+  const w = $("#p95W"); w.textContent = m.p95 > 800 ? "slow" : m.p95 > 400 ? "OK" : "fast"; w.style.color = m.p95 > 800 ? "var(--bad)" : m.p95 > 400 ? "var(--warn)" : "var(--ok)";
+  updateGuide();
   $("#errV").textContent = (m.err * 100).toFixed(1) + "%"; $("#errV").style.color = m.err > 0.01 ? "var(--bad)" : "var(--ink)";
   $("#budgetV").textContent = Math.ceil(S.budget) + "%";
   const bb = $("#budgetBar"); bb.style.width = S.budget + "%"; bb.style.background = S.budget < 25 ? "var(--bad)" : S.budget < 60 ? "var(--warn)" : "var(--ok)";
@@ -938,7 +1040,9 @@ let parts = [], anchors = {}, spawnAcc = 0;
 function measure() {
   const b = $("#board").getBoundingClientRect(), dpr = devicePixelRatio || 1;
   flow.width = b.width * dpr; flow.height = b.height * dpr; fg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  anchors = {};
   for (const z of document.querySelectorAll(".zone[data-z]")) {
+    if (z.hidden) continue;
     const r = z.getBoundingClientRect();
     anchors[z.dataset.z] = { x: r.left - b.left + r.width / 2, y: r.top - b.top + r.height / 2, h: r.height };
   }
@@ -954,7 +1058,9 @@ function spawn(dt) {
     let r = Math.random() * total, kind = "db";
     for (const [k, v] of Object.entries(m.out)) { if ((r -= v) <= 0) { kind = k; break; } }
     const isBot = kind === "blocked" || (m.botsPass > 0 && kind !== "cdn" && Math.random() < m.botsPass / (m.legit + m.botsPass));
-    parts.push({ route: ROUTES[kind], kind, seg: 0, f: 0, jitter: Math.random() - .5, bot: isBot, life: 1 });
+    const route = ROUTES[kind].filter(z => anchors[z]);
+    if (route.length < 2) continue;
+    parts.push({ route, kind, seg: 0, f: 0, jitter: Math.random() - .5, bot: isBot, life: 1 });
   }
 }
 function drawFlow(dt, moving) {
@@ -963,7 +1069,9 @@ function drawFlow(dt, moving) {
   const css = getComputedStyle(document.documentElement);
   fg.strokeStyle = css.getPropertyValue("--line-2"); fg.lineWidth = 1;
   const link = (a, b) => { const A = anchors[a], B = anchors[b]; if (!A || !B) return; fg.beginPath(); fg.moveTo(A.x, A.y); fg.bezierCurveTo((A.x + B.x) / 2, A.y, (A.x + B.x) / 2, B.y, B.x, B.y); fg.stroke(); };
-  [["users", "edge"], ["edge", "entry"], ["entry", "app"], ["app", "cache"], ["app", "jobs"], ["app", "data"], ["cache", "data"], ["jobs", "data"]].forEach(([a, b]) => link(a, b));
+  const chain = ["users", "edge", "entry", "app", "data"].filter(z => anchors[z]);
+  for (let i = 0; i < chain.length - 1; i++) link(chain[i], chain[i + 1]);
+  [["app", "cache"], ["app", "jobs"], ["cache", "data"], ["jobs", "data"]].forEach(([a, b]) => link(a, b));
   const col = { signal: css.getPropertyValue("--signal").trim(), bot: css.getPropertyValue("--bot").trim(), bad: css.getPropertyValue("--bad").trim(), ok: css.getPropertyValue("--ok").trim(), dim: css.getPropertyValue("--ink-faint").trim() };
   const speed = 520 * (S ? S.speed : 1);
   parts = parts.filter(p => p.life > 0);
@@ -1042,7 +1150,7 @@ function teach(key) {
 }
 function setTeach(on) {
   teachOn = on; store.set("loadrush-teach", on);
-  $("#teachBtn").textContent = "Teach: " + (on ? "on" : "off"); $("#teachBtn").classList.toggle("on", on);
+  const tb = $("#teachBtn"); if (tb) { tb.textContent = "Teach: " + (on ? "on" : "off"); tb.classList.toggle("on", on); }
 }
 
 /* ================================================================== flow of the game */
@@ -1050,8 +1158,8 @@ function setup(level) {
   L = level; S = newState(); armed = null; parts = [];
   for (const g of L.given) addPiece(g, { instant: true, fixed: g === "db" });
   $("#pager").innerHTML = "";
-  renderTray(); renderBoard(); updateRollback(); measure();
-  step(0.001); updateLive(); pushHist();
+  renderTray(); layoutZones(); renderBoard(); updateRollback(); measure();
+  step(0.001); updateLive(); pushHist(); updateGuide();
 }
 function load(level) {
   setup(level);
@@ -1064,12 +1172,13 @@ function load(level) {
 function setRunning(on) {
   if (!S || S.over) return;
   S.running = on;
-  $("#play").textContent = on ? "Pause" : (S.t > 0.01 ? "Resume" : "Start shift");
+  $("#play").textContent = on ? "❚❚ Pause" : (S.t > 0.01 ? "▶ Resume" : "▶ Start shift");
   $("#play").classList.toggle("go", !on);
+  updateGuide();
 }
 function end(win) {
   S.over = true; S.running = false; updateRollback();
-  $("#play").textContent = "Shift over"; $("#play").classList.remove("go");
+  $("#play").textContent = "Shift over"; $("#play").classList.remove("go"); updateGuide();
   const avgSpend = S.t ? S.spendSec / S.t : 0;
   let st = 0;
   if (win) { st = 1; if (S.budget >= 40) st = 2; if (S.budget >= 70 && avgSpend <= L.cap * 0.85) st = 3; }
@@ -1112,8 +1221,8 @@ function showBrief() {
     <p><b>${L.task}</b></p>
     ${fresh.length ? `<div class="label" style="margin-top:14px">New parts in your tray</div>
       <ul>${fresh.map(p => `<li><b>${p.name}</b> ($${p.cost}/h, ${p.boot}s to start). ${p.what} <span class="real">In real life: <b>${p.real}</b>.</span></li>`).join("")}</ul>` : ""}
-    <p class="real">The game starts paused. Drag parts in first if you want. Amber outlines mark empty columns.${teachOn ? " Teach mode is on: the game pauses to explain when something goes wrong." : ""}</p>
-    <div class="acts"><button class="btn go" id="bGo">Look at the board</button><button class="btn" id="bMenu2">All shifts</button></div>`;
+    <p class="real">The game starts paused. The bar above the board always tells you what to do next.${teachOn ? " Teach mode is on: the game pauses to explain each problem." : ""}</p>
+    <div class="acts"><button class="btn go" id="bGo">Got it, show me the board</button><button class="btn" id="bMenu2">All shifts</button></div>`;
   $("#ov").hidden = false;
   $("#bGo").onclick = () => { $("#ov").hidden = true; measure(); };
   $("#bMenu2").onclick = showMenu;
@@ -1132,7 +1241,7 @@ function showMenu() {
     </ul>
     <div class="label" style="margin-top:12px">Who is playing?</div>
     <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
-    <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>runs at half speed and pauses to explain each problem, with a diagram and a question</small></label>
+    <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>(recommended the first time) half speed; pauses to explain each problem with a picture and a question</small></label>
     <div class="levels">${LEVELS.map((lv, i) => `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
         <span class="n">SHIFT ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
@@ -1184,7 +1293,7 @@ $("#board").addEventListener("click", e => {
   if (armed && z.dataset.z !== "users") { if (place(armed, z.dataset.z) !== false) { armed = null; renderTray(); } return; }
   inspect(z.dataset.z);
 });
-document.querySelectorAll(".mon[data-insp]").forEach(el => el.addEventListener("click", () => inspect(el.dataset.insp)));
+document.querySelectorAll(".tile[data-insp]").forEach(el => el.addEventListener("click", () => inspect(el.dataset.insp)));
 
 /* sandbox controls */
 const SLIDERS = [["sbUsers", "legit", v => v, v => n0(v)], ["sbBots", "bots", v => v, v => n0(v)], ["sbStatic", "staticFrac", v => v / 100, v => v + "%"],
@@ -1199,7 +1308,6 @@ document.querySelectorAll("[data-ev]").forEach(b => b.addEventListener("click", 
 /* ================================================================== controls + loop */
 $("#play").onclick = () => { if (S && !S.over) setRunning(!S.running); };
 $("#speed").onclick = () => { if (!S) return; S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 0.5 : 1; $("#speed").textContent = (S.speed === 0.5 ? "½" : S.speed) + "×"; };
-$("#teachBtn").onclick = () => setTeach(!teachOn);
 $("#rollback").onclick = rollback;
 $("#menu").onclick = showMenu;
 document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
