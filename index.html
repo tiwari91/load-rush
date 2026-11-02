@@ -126,6 +126,8 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .whatsnew > b { color: var(--accent); } .whatsnew span { flex: 1 1 360px; } .whatsnew .btn { padding: 4px 12px; font-size: 12px; }
 .partcard a { color: var(--accent); }
 .guide-list { padding-left: 18px; display: grid; gap: 6px; } .guide-list li { color: var(--ink-dim); } .guide-list b { color: var(--ink); }
+.exps { margin: 4px 0 6px; padding-left: 18px; display: grid; gap: 6px; font-size: 12px; color: var(--ink-faint); }
+.exps li b { display: block; color: var(--ink-dim); font-size: 12.5px; } .exps li.on b { color: var(--ok); }
 /* Learning path */
 .skillbar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 10px 0; }
 .skillbar i { display: block; height: 100%; background: var(--ok); }
@@ -396,7 +398,9 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
     <div class="tray" id="tray"></div>
     <p class="tray-note">You can also click a part, then click a column. The × on a part removes it.</p>
     <div class="sandbox" id="sandbox" hidden>
-      <div class="label">Sandbox traffic</div>
+      <div class="label">Experiments <small id="expCount"></small></div>
+      <ol class="exps" id="exps"></ol>
+      <div class="label" style="margin-top:6px">Sandbox traffic</div>
       <label class="sl" for="sbUsers">Visitors a second <b id="sbUsersV"></b><input type="range" id="sbUsers" min="0" max="1500" step="10" value="300"></label>
       <label class="sl" for="sbBots">Bots a second <b id="sbBotsV"></b><input type="range" id="sbBots" min="0" max="3000" step="50" value="0"></label>
       <label class="sl" for="sbStatic">Images, CSS, JS <b id="sbStaticV"></b><input type="range" id="sbStatic" min="0" max="80" step="5" value="30"></label>
@@ -1302,7 +1306,8 @@ function decodeProgress(code) {
     for (const k of Object.keys(skills)) if (!SKILLS.some(s => s.id === k)) delete skills[k];
     const scores = plainObj(p.scores, v => Number.isFinite(v) && v >= 0 && v < 1e6);
     const oncall = plainObj(p.oncall, v => Number.isFinite(v) && v >= 0 && v < 1e6);
-    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall };
+    const exp = plainObj(p.exp, v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
+    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall, exp };
   } catch { return null; }
 }
 /* Hourly cost as a rough monthly figure (730 hours in a month). */
@@ -1458,6 +1463,37 @@ function incidentReport(S, oc) {
   }
   return { squares: sq.join(""), streak: oncallStreak(),
     html: `<div class="label" style="margin-top:14px">Incident report <small>(what happened, and what to remember)</small></div><ol class="pms">${rows.join("")}</ol>` };
+}
+
+/* ---- sandbox experiments: a goal the game checks, ticked off when you reach it ---- */
+const EXPERIMENTS = [
+  { id: "lb", title: "Why a load balancer?", how: "Set visitors to 400 or more. Use two or more App servers, and keep them under 90% busy.",
+    done: m => sandboxTraffic.legit >= 400 && count("app") >= 2 && has("lb") && m.uA < 0.9, learn: "Without a load balancer, extra servers sit idle. With one, they share the work." },
+  { id: "cache", title: "What a cache does", how: "Set reading to 90%+ and visitors to 600+. Get the Database under 80% busy with a warm Cache.",
+    done: m => sandboxTraffic.legit >= 600 && sandboxTraffic.readFrac >= 0.9 && has("cache") && m.hit > 0.6 && m.dbUp && m.uD < 0.8, learn: "Repeated reads are answered from memory, so the database does far less work." },
+  { id: "bots", title: "Stop a bot flood", how: "Turn bots up to 2000+ a second and keep failed pages under 1%.",
+    done: m => sandboxTraffic.bots >= 2000 && m.err < 0.01, learn: "A rate limiter at the edge drops abusive traffic before it costs you servers." },
+  { id: "cdn", title: "Images off your servers", how: "Set images, CSS and JS to 60%+ and keep App servers under 80% busy with a CDN.",
+    done: m => sandboxTraffic.staticFrac >= 0.6 && has("cdn") && m.uA < 0.8, learn: "Files that never change come from the CDN near the user, not from your app." },
+  { id: "queue", title: "Slow work, done later", how: "Set slow jobs to 20%+ and keep failed pages under 1% with a Queue and 2+ Workers.",
+    done: m => sandboxTraffic.heavyFrac >= 0.2 && has("queue") && ready("worker").length >= 2 && m.err < 0.01, learn: "Users get an answer at once; the slow part happens in the background." },
+  { id: "failover", title: "Kill the database, safely", how: "Add a Standby DB, wait until it has started, then press Kill the DB.",
+    done: m => !!S.failedOver, learn: "A ready standby takes over in seconds. Without one, a restore takes much longer." },
+];
+function renderExperiments() {
+  const box = document.getElementById("exps"); if (!box) return;
+  const got = store.get("loadrush-exp", {});
+  box.innerHTML = EXPERIMENTS.map(e => `<li class="${got[e.id] ? "on" : ""}"><b>${got[e.id] ? "✓ " : ""}${e.title}</b><span>${got[e.id] ? e.learn : e.how}</span></li>`).join("");
+  $("#expCount").textContent = `${EXPERIMENTS.filter(e => got[e.id]).length} of ${EXPERIMENTS.length} done`;
+}
+function checkExperiments() {
+  if (!L || !L.sandbox || !S || !S.m) return;
+  const got = store.get("loadrush-exp", {});
+  for (const e of EXPERIMENTS) if (!got[e.id] && e.done(S.m)) {
+    got[e.id] = dayKey(); store.set("loadrush-exp", got);
+    toast(`Experiment done: ${e.title}. ${e.learn}`); log("good", `Experiment done: ${e.title}.`); if (typeof sndPing === "function") sndPing();
+    track("experiment", e.id); renderExperiments();
+  }
 }
 
 /* ---- check yourself: one question about the problem that hurt most this shift ---- */
@@ -1734,6 +1770,7 @@ function renderTray() {
     tray.appendChild(b);
   }
   $("#sandbox").hidden = !L.sandbox;
+  if (L.sandbox) renderExperiments();
   if (typeof showSuggestion === "function" && S) { showSuggestion(); updateHeader(); }
 }
 function renderBoard() {
@@ -1796,6 +1833,7 @@ function updateLive() {
   updateGuide();
   $("#errV").textContent = (m.err * 100).toFixed(1) + "%"; $("#errV").style.color = m.err > 0.01 ? "var(--bad)" : "var(--ink)";
   $("#budgetV").textContent = Math.ceil(S.budget) + "%";
+  checkExperiments();
   const bb = $("#budgetBar"); bb.style.width = S.budget + "%"; bb.style.background = S.budget < 25 ? "var(--bad)" : S.budget < 60 ? "var(--warn)" : "var(--ok)";
   updateHeader();
 }
@@ -2397,7 +2435,7 @@ addEventListener("pagehide", saveGame);
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
 function copyProgress() {
   const code = encodeProgress({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false),
-    skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}) });
+    skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}) });
   const box = $("#progCode"); box.value = code; box.hidden = false; box.select();
   const done = () => { $("#progMsg").textContent = "Copied. Paste it into Load progress on any browser or computer."; };
   try { navigator.clipboard.writeText(code).then(done, () => { $("#progMsg").textContent = "Select the code above and copy it."; }); }
@@ -2409,7 +2447,7 @@ function loadProgress() {
   stars = p.stars; store.set("loadrush-stars", stars);
   role = p.role; store.set("loadrush-role", role);
   setTeach(p.teach); setPresent(p.present); store.set("loadrush-tour-done", p.tour);
-  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall);
+  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall); store.set("loadrush-exp", p.exp);
   showMenu(); toast(`Progress loaded: ${Object.keys(stars).length} shift${Object.keys(stars).length === 1 ? "" : "s"} with stars.`);
 }
 

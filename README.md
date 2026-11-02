@@ -19,7 +19,7 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 9. Slow Partner: an outside payment API hangs
 10. Black Friday: everything at once
 
-There is also a Sandbox with traffic sliders and buttons to break things on purpose.
+There is also a Sandbox with traffic sliders, buttons to break things on purpose, and six guided experiments (load balancer, cache, bot flood, CDN, queue, safe database failover), each ticked off when you reach its goal.
 
 ## On call (a new shift every day)
 
