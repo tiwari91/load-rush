@@ -1345,7 +1345,8 @@ function scoreFor(S, L, win) {
   const rows = [], add = (label, pts, note) => { if (pts) rows.push({ label, pts: Math.round(pts), note }); };
   add("Health kept", Math.max(0, S.budget) * 5, `${Math.ceil(Math.max(0, S.budget))}% × 5`);
   add("Kept the site up", win ? 200 : 0);
-  const keys = Object.keys(S.seen || {}).filter(k => (S.seen[k] || 0) > 1);
+  const live = new Set((S.problems || []).map(p => p[0]));   // still going at the end: not fixed
+  const keys = Object.keys(S.seen || {}).filter(k => (S.seen[k] || 0) > 1 && !live.has(k));
   let self = 0, shown = 0, done = 0, fast = 0;
   for (const k of keys) {
     const h = (S.helped || {})[k];
@@ -1453,6 +1454,18 @@ function incidentReport(S, oc) {
   }
   return { squares: sq.join(""), streak: oncallStreak(),
     html: `<div class="label" style="margin-top:14px">Incident report <small>(what happened, and what to remember)</small></div><ol class="pms">${rows.join("")}</ol>` };
+}
+
+/* ---- check yourself: one question about the problem that hurt most this shift ---- */
+function checkYourselfHtml(S) {
+  if (!S || L.sandbox) return "";
+  const keys = Object.entries(S.blame || {}).sort((a, b) => b[1] - a[1]).map(x => x[0]).concat(Object.keys(S.seen || {}));
+  const k = keys.find(x => (problem(x) || {}).teach && (problem(x).teach.q));
+  if (!k) return "";
+  const c = problem(k).teach;
+  return `<div class="label" style="margin-top:14px">Check yourself <small>(one question about what hurt you most)</small></div>
+    <p style="margin:6px 0"><b>${c.q}</b></p>
+    <div class="choices">${c.options.map((o, i) => `<button class="choice cy-opt" data-k="${k}" data-i="${i}">${o[0]}</button>`).join("")}</div><div id="cyWhy"></div>`;
 }
 
 /* ---- a heads-up: a warning is a chance to prepare (only when the part is not there yet) ---- */
@@ -2108,6 +2121,7 @@ function end(win) {
     </div>
     ${win && st < 3 && !oc ? `<p class="real">3 stars: finish with 70%+ budget and average spend under $${Math.floor(L.cap * 0.85)}/h.</p>` : ""}
     ${report ? report.html : ""}
+    ${checkYourselfHtml(S)}
     <div class="label" style="margin-top:14px"${oc ? " hidden" : ""}>What this shift teaches</div>
     <ul${oc ? " hidden" : ""}>${L.learned.map(x => `<li>${x.replace(/`([^`]+)`/g, "<code>$1</code>")}</li>`).join("")}</ul>
     ${role !== "mid" && L.staff ? `<div class="label" style="margin-top:14px">Staff-level questions to discuss</div><ul>${L.staff.map(x => `<li>${x}</li>`).join("")}</ul>` : ""}
@@ -2121,6 +2135,13 @@ function end(win) {
     ${L.sandbox ? "" : feedbackBox(L.name)}`, closeSheet);
   track(win ? "shift-won" : "shift-lost", `${L.name}${worst && !win ? ": " + worst.name : ""}`);
   if ($("#bNext")) $("#bNext").onclick = () => load(next);
+  for (const b of document.querySelectorAll(".cy-opt")) b.onclick = () => {
+    const c = (problem(b.dataset.k) || {}).teach, o = c.options[+b.dataset.i];
+    b.classList.add(o[1] ? "right" : "wrong");
+    $("#cyWhy").innerHTML = `<div class="why ${o[1] ? "" : "no"}">${o[2]}</div>`;
+    if (o[1]) document.querySelectorAll(".cy-opt").forEach(x => x.disabled = true);
+    track(o[1] ? "check-right" : "check-wrong", b.dataset.k);
+  };
   if ($("#bPractice")) $("#bPractice").onclick = () => load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9)));
   if ($("#bShare")) $("#bShare").onclick = () => {
     const text = `Load Rush · on call ${oc.date}\n${report.squares} ${sc.total} points\n${report.streak}-day streak · https://tiwari91.github.io/load-rush/`;
