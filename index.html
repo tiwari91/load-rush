@@ -94,6 +94,25 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
   background: var(--panel); border: 1px solid var(--line); cursor: grab; touch-action: none; user-select: none; text-align: left; }
 .card:hover { border-color: var(--line-2); background: var(--panel-2); }
 .card.armed { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+/* The part the coach suggests, and the column it goes in: a calm, slow glow (no flashing). */
+.card.suggest { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+.card.suggest .nm::after { content: "  ← try this"; font: 600 11px var(--mono); color: var(--accent); }
+.card.cant { opacity: .55; }
+.card .need { grid-column: 2; font: 11px var(--mono); color: var(--warn); }
+.zone.target { border: 1px dashed var(--accent) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+.zone.target::after { content: "drop it here"; position: absolute; top: -10px; right: 10px; padding: 1px 8px; border-radius: 9px; background: var(--accent); color: #1b1b1b; font: 600 10.5px var(--mono); }
+/* How busy a column is, in colour: amber when it is getting full, red when it is over. */
+.zone.busy { border: 1px solid color-mix(in srgb, var(--warn) 70%, transparent); background: color-mix(in srgb, var(--warn) 5%, transparent); }
+.zone.full { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .card.suggest, .zone.target { animation: calmglow 2.6s ease-in-out infinite; } }
+@keyframes calmglow { 50% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 22px color-mix(in srgb, var(--accent) 50%, transparent); } }
+/* Spend limit, always in view above the parts. */
+.spendbox { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.spendbox .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-dim); }
+.spendbox .top b { font: 500 13px var(--mono); color: var(--ink); }
+.spendbox .bar { height: 6px; margin-top: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.spendbox .bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .25s, background .25s; }
+.spendbox small { display: block; margin-top: 5px; font-size: 11px; color: var(--ink-faint); }
 .card.new::after { content: "NEW"; grid-column: 2; font: 600 9px var(--mono); color: var(--warn); letter-spacing: .1em; }
 .tag { grid-row: span 2; width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
   font: 700 12px var(--display); letter-spacing: .03em; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--accent); }
@@ -300,6 +319,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
       <button class="btn go big" id="play">▶ Start shift</button>
       <button class="btn" id="speed" title="Game speed">1×</button>
       <button class="btn" id="words" title="What the words mean">Words</button>
+      <button class="btn" id="sndBtn" title="Soft sounds: a ping when a part is ready, a chime when something needs attention">Sound: on</button>
       <button class="btn" id="menu">Menu</button>
     </div>
   </div>
@@ -307,6 +327,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
 
 <div class="stage">
   <aside>
+    <div class="spendbox"><div class="top"><span>Spend limit</span><b id="sbV">$0 / $0 an hour</b></div><div class="bar"><i id="sbBar"></i></div><small id="sbNote">Each part costs money every hour. You cannot go over the limit.</small></div>
     <div class="label" style="margin-bottom:8px">Parts: drag one onto the board</div>
     <div class="tray" id="tray"></div>
     <p class="tray-note">You can also click a part, then click a column. The × on a part removes it.</p>
@@ -682,6 +703,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? 
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 let stars = store.get("loadrush-stars", {});
 let teachOn = store.get("loadrush-teach", false);
+let rescueOn = store.get("loadrush-rescue", true);   // pause and help when health falls (on unless turned off)
 let role = store.get("loadrush-role", "mid");
 const ROLES = { mid: { name: "Mid-level", wait: 5, desc: "Hints appear in the pager after 5 seconds. Plain explanations." },
   staff: { name: "Staff", wait: 10, desc: "Hints wait 10 seconds. After each shift: trade-off questions to discuss." },
@@ -692,7 +714,7 @@ function newState() {
     autoTick: 0, hist: { rps: [], bots: [], p95: [], err: [] }, m: null, tipHeld: {}, tipsShown: {}, fired: {},
     peak: 0, worstP95: 0, failed: 0, total: 0, spendSec: 0,
     release: null, dbDown: 0, failoverTo: null, azDown: 0, partnerSlow: 0, taught: {},
-    blame: {}, timeline: [], marks: [], tlSec: -1, hintUsed: false, hintKeys: {} };
+    blame: {}, timeline: [], marks: [], tlSec: -1, hintUsed: false, hintKeys: {}, rescued: {} };
 }
 /* A note on the end-of-shift timeline. kind: incident, fix or part. */
 function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
@@ -775,7 +797,7 @@ function tickIncidents(dt) {
 function step(dt) {
   S.t += dt;
   const tr = L.traffic(S.t);
-  for (const p of S.pieces) if (p.bootLeft > 0) p.bootLeft = Math.max(0, p.bootLeft - dt);
+  for (const p of S.pieces) if (p.bootLeft > 0) { p.bootLeft = Math.max(0, p.bootLeft - dt); if (p.bootLeft === 0 && typeof sndPing === "function") sndPing(); }
   L.events.forEach((e, i) => { if (!S.fired[i] && S.t >= e.t) { S.fired[i] = true; fire(e.kind, e.text); } });
   tickIncidents(dt);
 
@@ -907,16 +929,24 @@ function coach(dt) {
   const now = PROBLEMS.filter(p => p.when(m, apps, r));
   S.problems = now.filter(p => (S.tipHeld[p.key] || 0) > 1).map(p => [p.key, p.text(m, apps, r)]);
   if (m.drop > 0) { const k = now.length ? now[0].key : "other"; S.blame[k] = (S.blame[k] || 0) + m.drop; }
+  S.fall = (S.fall || 0) * 0.92 + (dt > 0 ? (m.drop || 0) / dt : 0) * 0.08;   // health lost a second, smoothed
   let toTeach = null;
   for (const p of PROBLEMS) {
     const on = now.includes(p);
     S.tipHeld[p.key] = on ? (S.tipHeld[p.key] || 0) + dt : 0;
     if (S.tipHeld[p.key] > wait && !S.tipsShown[p.key]) {
-      S.tipsShown[p.key] = 1; log("coach", p.text(m, apps, r));
+      S.tipsShown[p.key] = 1; log("coach", p.text(m, apps, r)); if (typeof sndChime === "function") sndChime();
       if (teachOn && p.teach && !S.taught[p.key] && !toTeach) { S.taught[p.key] = 1; toTeach = p.key; }
     }
   }
-  if (toTeach) teach(toTeach);
+  if (toTeach) { teach(toTeach); return; }
+  // Learning, not a test: when health is falling, stop and help before the site goes down (once at 60%, once at 25%).
+  if (rescueOn && !L.sandbox && S.running && !S.over && S.problems.length && typeof rescue === "function" && document.getElementById("ov").hidden) {
+    // Also step in early when health is falling so fast it would hit zero within about 8 seconds.
+    const key = S.problems[0][0], fast = S.fall > 0 && S.budget / S.fall < 8;
+    const lvl = S.budget < 25 || fast ? 2 : S.budget < 60 ? 1 : 0;
+    if (lvl && (S.rescued[key] || 0) < lvl) { S.rescued[key] = lvl; rescue(key, lvl); }
+  }
 }
 
 function place(type, zone) {
@@ -1081,10 +1111,103 @@ function updateGuide() {
   $("#gicon").textContent = icon; $("#gtitle").textContent = title;
   $("#gtext").innerHTML = text + (canHint ? ` <button class="btn hintbtn" id="hintBtn">Show hint (this shift then gets 2 stars at most)</button>` : "");
   if (canHint) $("#hintBtn").onclick = () => { useHint(hintKey); guideKey = ""; updateGuide(); };
+  showSuggestion();
   const pz = $("#paused"); pz.hidden = S.running || S.over;
   $("#pausedText").textContent = started ? "Press ▶ Resume to carry on." : "Add parts if you want, then press ▶ Start shift.";
   $("#play").classList.toggle("ready", !S.running && !S.over);
 }
+/* ---- coaching: which part to use, where it goes, and a pause to help when health falls ---- */
+const NAME_TO_TYPE = Object.fromEntries(Object.entries(PARTS).map(([k, p]) => [p.name.toLowerCase(), k]));
+/* The parts a fix text names in bold, in order ("Add <b>App servers</b>, or an <b>Autoscaler</b>"). */
+function fixParts(html) {
+  const out = [];
+  for (const mm of String(html || "").matchAll(/<b>([^<]+)<\/b>/g)) {
+    const n = mm[1].trim().toLowerCase(), t = NAME_TO_TYPE[n] || NAME_TO_TYPE[n.replace(/s$/, "")];
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+/* The first suggested part you can use right now (in this shift's tray, under its maximum). */
+function suggestedPart() {
+  if (!S || S.over || !S.problems || !S.problems.length) return null;
+  const key = S.problems[0][0];
+  if (role !== "mid" && !(S.hintKeys && S.hintKeys[key])) return null;   // Staff and Principal work it out first
+  return fixParts((problem(key) || {}).fix).find(t => L.tray.includes(t) && count(t) < PARTS[t].max) || null;
+}
+function showSuggestion() {
+  const t = suggestedPart();
+  document.querySelectorAll("#tray .card").forEach(c => c.classList.toggle("suggest", c.dataset.type === t));
+  document.querySelectorAll(".zone[data-z]").forEach(z => z.classList.toggle("target", !!t && z.dataset.z === PARTS[t].zone));
+}
+function rescue(key, lvl) {
+  const p = problem(key) || {}, c = p.teach || {}, now = (S.problems.find(x => x[0] === key) || [])[1] || "";
+  const t = fixParts(p.fix).find(x => L.tray.includes(x));
+  const part = t && PARTS[t], over = part && spendRate() + part.cost > L.cap, maxed = part && count(t) >= part.max;
+  const canDo = part && !over && !maxed && !/^Nothing to do/i.test(p.fix || "");   // "Next time, add X" is advice, not a fix for now
+  // Fix the app servers and the bottleneck moves: requests that failed there will all reach the database.
+  const dbNext = t === "app" && S.m && S.m.dbUp ? S.m.uD * Math.max(1, S.m.uA) : 0;
+  const addCache = dbNext > 0.9 && L.tray.includes("cache") && !count("cache");
+  let todo = p.fix || "Click the columns to see which one is full.";
+  if (part && over) todo = `The fix is ${/^[aeiou]/i.test(part.name) ? "an" : "a"} <b>${part.name}</b> ($${part.cost}/h), but you are at your $${L.cap}/h spend limit. Remove a part that is mostly idle first (click a column to see how busy it is), then add it.`;
+  else if (part && maxed) todo = `You already have the most <b>${part.name}s</b> allowed (${part.max}). Take load off them another way: ${p.fix}`;
+  setRunning(false);
+  if (typeof sndChime === "function") sndChime();
+  mark(lvl === 2 ? "Paused to help (25%)" : "Paused to help (60%)", "fix");
+  openSheet(`
+    <div class="kick teach">${S.budget < 25 ? "Paused: the site is close to going down" : lvl === 2 ? "Paused to help: site health is falling fast" : "Paused to help: site health is falling"}</div>
+    <h2>${p.name || "Something needs attention"}</h2>
+    ${c.diagram ? `<div class="diagram">${diagramSvg(c.diagram)}</div>` : ""}
+    <p><b>What is happening:</b> ${now}</p>
+    ${c.explain ? `<p><b>Why:</b> ${c.explain}</p>` : ""}
+    <p><b>What to do:</b> ${todo}</p>
+    ${dbNext > 0.9 ? `<p><b>Watch out for what comes next:</b> once the app servers keep up, every request they used to drop reaches the database, which will be about ${Math.round(dbNext * 100)}% busy. ${addCache ? "A <b>Cache</b> takes repeated reads off it; <i>Do it for me</i> adds one too." : "Plan for it now."}</p>` : ""}
+    <div class="acts">
+      ${canDo ? `<button class="btn go" id="rDo">Do it for me</button>` : ""}
+      <button class="btn ${canDo ? "" : "go"}" id="rShow">${canDo ? "Show me where, I'll do it" : "Back to the board"}</button>
+    </div>
+    <p class="real">The game carries on at half speed after this, so you have time. You can turn this help off in Menu → Settings.</p>`, back);
+  function back() { closeSheet(); S.speed = 0.5; $("#speed").textContent = "½×"; guideKey = ""; setRunning(true); updateGuide(); }
+  $("#rShow").onclick = back;
+  if (canDo) $("#rDo").onclick = () => {
+    // Add enough to fix it, not just one: for servers and workers, as many as the load needs (to about 80% busy),
+    // inside the spend limit. An autoscaler on offer goes in too, so it keeps up from here.
+    let want = 1;
+    if (t === "app" && S.m) want = Math.max(1, Math.ceil(count("app") * S.m.uA / 0.8) - count("app"));
+    if (t === "worker") want = Math.max(1, Math.min(3, Math.ceil(S.backlog / 1500)));
+    let added = 0;
+    S.rescued[key] = 2;   // already fixed: no second pause for this while the new parts start up
+    for (let k = 0; k < want && place(t, part.zone) !== false; k++) added++;
+    const extra = t === "app" && L.tray.includes("auto") && !count("auto") && place("auto", "app") !== false;
+    const cached = addCache && place("cache", "cache") !== false;
+    if (cached) { S.rescued.dbhot = 2; log("coach", "Added a Cache too: it remembers common answers, so the database is not asked the same thing again and again."); }
+    if (added) {
+      const what = added > 1 ? `${added} ${part.name}s` : `${/^[aeiou]/i.test(part.name) ? "an" : "a"} ${part.name}`;
+      log("coach", `Added ${what} for you${extra ? " and an Autoscaler to keep up from now on" : ""}. ${part.what}${part.boot > 1 ? ` New ones need ${part.boot}s to start.` : ""}`);
+      mark(`Help: + ${what}`, "fix");
+    }
+    back();
+  };
+}
+
+/* ---- soft sounds: a ping when a part is ready, a chime when something needs attention. No alarms. ---- */
+let sndOn = store.get("loadrush-sound", true), actx = null;
+function sndCtx() {
+  if (!sndOn) return null;
+  try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === "suspended") actx.resume(); } catch { return null; }
+  return actx;
+}
+function tone(freq, at, dur, vol, type = "sine") {
+  const a = sndCtx(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain(), t = a.currentTime + at;
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.05);
+}
+function sndPing() { if (!S || !S.running) return; tone(988, 0, 0.18, 0.05); tone(1318, 0.07, 0.25, 0.04); }
+function sndChime() { tone(660, 0, 0.35, 0.05); tone(880, 0.16, 0.45, 0.045); }
+function sndEnd(win) { if (win) { tone(523, 0, 0.3, 0.05); tone(659, 0.14, 0.3, 0.05); tone(784, 0.28, 0.5, 0.05); } else { tone(440, 0, 0.4, 0.045); tone(392, 0.22, 0.6, 0.04); } }
+function setSound(on) { sndOn = on; store.set("loadrush-sound", on); const b = $("#sndBtn"); if (b) b.textContent = "Sound: " + (on ? "on" : "off"); if (on) sndPing(); }
+
 function killPiece(id) {
   const el = document.querySelector(`.chip[data-id="${id}"]`);
   S.pieces = S.pieces.filter(p => p.id !== id);
@@ -1122,6 +1245,7 @@ function renderTray() {
     tray.appendChild(b);
   }
   $("#sandbox").hidden = !L.sandbox;
+  if (typeof showSuggestion === "function" && S) { showSuggestion(); updateHeader(); }
 }
 function renderBoard() {
   setTimeout(tourCheck, 0);
@@ -1154,8 +1278,9 @@ function renderBoard() {
 }
 function setLoad(zone, u, text) {
   const el = document.querySelector(`.zone[data-z="${zone}"] .load`);
-  if (u === null) { el.innerHTML = ""; return; }
+  if (u === null) { el.innerHTML = ""; el.closest(".zone").classList.remove("busy", "full"); return; }
   if (!el.firstChild) el.innerHTML = `<div class="bar"><i></i></div><div class="txt"><span></span><span></span></div>`;
+  const zEl = el.closest(".zone"); zEl.classList.toggle("busy", u > 0.75 && u <= 0.95); zEl.classList.toggle("full", u > 0.95);
   const i = el.querySelector("i"); i.style.width = Math.min(100, u * 100) + "%";
   i.style.background = u > 0.95 ? "var(--bad)" : u > 0.75 ? "var(--warn)" : "var(--ok)";
   const [a, b] = el.querySelectorAll(".txt span"); a.textContent = text; b.textContent = Math.round(u * 100) + "%";
@@ -1190,6 +1315,16 @@ function updateHeader() {
   $("#clock").textContent = L.sandbox ? `${fmt(S.t)} · no limit` : `${fmt(Math.min(S.t, L.duration))} / ${fmt(L.duration)}`;
   const sp = spendRate(); $("#spend").textContent = `$${sp} / $${L.cap} an hour`;
   $("#spendLbl").textContent = `Cost · about $${perMonth(sp)} a month`; $("#spend").style.color = sp >= L.cap ? "var(--warn)" : "var(--ink)";
+  const f = Math.min(1, sp / L.cap); $("#sbV").textContent = `$${sp} / $${L.cap} an hour`;
+  $("#sbBar").style.width = 100 * f + "%"; $("#sbBar").style.background = f >= 1 ? "var(--bad)" : f > 0.8 ? "var(--warn)" : "var(--ok)";
+  $("#sbNote").textContent = sp >= L.cap ? "At the limit: remove a part to make room for another." : `$${L.cap - sp} an hour left to spend.`;
+  for (const c of document.querySelectorAll("#tray .card")) {
+    const t = c.dataset.type, part = PARTS[t], short = sp + part.cost - L.cap, maxed = count(t) >= part.max;
+    const why = maxed ? `max ${part.max} reached` : short > 0 ? `need $${short} more an hour` : "";
+    c.classList.toggle("cant", !!why);
+    let n = c.querySelector(".need"); if (why && !n) { n = document.createElement("span"); n.className = "need"; c.appendChild(n); }
+    if (n) n.textContent = why;
+  }
 }
 function updateRollback() {
   const r = S && S.release, b = $("#rollback");
@@ -1245,7 +1380,7 @@ const ROUTES = { blocked: ["users", "edge"], cdn: ["users", "edge"], appfail: ["
 function spawn(dt) {
   const m = S.m; if (!m) return;
   const total = Object.values(m.out).reduce((a, b) => a + b, 0); if (total <= 0) return;
-  spawnAcc += Math.min(reduced ? 12 : 55, total / 10) * dt;
+  spawnAcc += Math.min(reduced ? 12 : 100, total / 8) * dt;
   while (spawnAcc >= 1) {
     spawnAcc -= 1;
     let r = Math.random() * total, kind = "db";
@@ -1268,14 +1403,19 @@ function drawFlow(dt, moving) {
   const col = { signal: css.getPropertyValue("--signal").trim(), bot: css.getPropertyValue("--bot").trim(), bad: css.getPropertyValue("--bad").trim(), ok: css.getPropertyValue("--ok").trim(), dim: css.getPropertyValue("--ink-faint").trim() };
   const speed = 520 * (S ? S.speed : 1);
   parts = parts.filter(p => p.life > 0);
+  if (parts.length > 800) parts.splice(0, parts.length - 800);
+  // How full each column is: requests heading into a full one slow down at its door and bunch up, so you can see the line.
+  const m = S && S.m, util = m ? { app: m.uA, data: m.dbUp ? m.uD : 3 } : {};
+  const traffic = m ? m.legit + m.bots : 0, rad = 2.2 + Math.min(1, traffic / 900);
   for (const p of parts) {
     const A = anchors[p.route[p.seg]], B = anchors[p.route[p.seg + 1]];
     if (!A) { p.life = 0; continue; }
     let x, y;
-    if (!B) { if (moving) p.life -= dt * 2.5; x = A.x + p.jitter * 20; y = A.y + p.jitter * A.h * 0.35; }
+    if (!B) { if (moving) p.life -= dt * 2.5; x = A.x + p.jitter * 20; y = A.y + p.jitter * A.h * 0.35 + ((p.kind === "appfail" || p.kind === "dbfail") ? (1 - p.life) * 40 : 0); }
     else {
       const dist = Math.hypot(B.x - A.x, B.y - A.y) || 1;
-      if (moving) p.f += (speed * dt) / dist;
+      const uB = util[p.route[p.seg + 1]] || 0, slow = uB > 1 && p.f > 0.65 ? Math.max(0.1, 1 / (uB * uB * 2.5)) : 1;
+      if (moving) p.f += (speed * slow * dt) / dist;
       if (p.f >= 1) { p.seg++; p.f = 0; continue; }
       const t = p.f, mx = (A.x + B.x) / 2;
       x = (1 - t) ** 3 * A.x + 3 * (1 - t) ** 2 * t * mx + 3 * (1 - t) * t * t * mx + t ** 3 * B.x;
@@ -1285,7 +1425,7 @@ function drawFlow(dt, moving) {
     let c = p.bot ? col.bot : col.signal;
     if (last && failed) c = col.bad; else if (last && p.kind === "blocked") c = col.dim; else if (last && (p.kind === "cdn" || p.kind === "cache")) c = col.ok;
     fg.globalAlpha = Math.max(0, p.life); fg.fillStyle = c;
-    fg.beginPath(); fg.arc(x, y, last && failed ? 3.2 : 2.2, 0, 7); fg.fill();
+    fg.beginPath(); fg.arc(x, y, last && failed ? rad + 1 : rad, 0, 7); fg.fill();
   }
   fg.globalAlpha = 1;
 }
@@ -1472,7 +1612,8 @@ function setRunning(on) {
   updateGuide();
 }
 function end(win) {
-  S.over = true; S.running = false; updateRollback(); cancelDrag();
+  S.over = true; S.running = false; updateRollback(); cancelDrag(); showSuggestion();
+  if (typeof sndEnd === "function") sndEnd(win);
   $("#play").textContent = "Shift over"; $("#play").classList.remove("go"); updateGuide();
   const avgSpend = S.t ? S.spendSec / S.t : 0;
   const st = starsFor(S, L, win), worst = worstProblem(S);
@@ -1547,6 +1688,7 @@ function showMenu() {
     <details class="more" style="margin-top:16px"><summary>Settings: level, teach mode, big text</summary>
       <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
       <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>half speed; pauses to explain each problem</small></label><br>
+      <label class="switch" for="rescueSw" style="margin-top:8px"><input type="checkbox" id="rescueSw" ${rescueOn ? "checked" : ""}> Help me when health drops <small>pauses at 60% and 25% health to explain what is wrong and how to fix it</small></label><br>
       <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label>
     </details>
     <details class="more"><summary>Save or move your progress</summary>
@@ -1556,6 +1698,7 @@ function showMenu() {
       <div class="real" id="progMsg"></div>
     </details>`, () => { closeSheet(); $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`; });
   $("#teachSw").onchange = e => setTeach(e.target.checked);
+  $("#rescueSw").onchange = e => { rescueOn = e.target.checked; store.set("loadrush-rescue", rescueOn); };
   $("#presentSw").onchange = e => setPresent(e.target.checked);
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
   $("#bCopyProg").onclick = copyProgress;
@@ -1627,6 +1770,8 @@ document.querySelectorAll("[data-ev]").forEach(b => b.addEventListener("click", 
 
 /* ================================================================== controls + loop */
 $("#play").onclick = () => { if (S && !S.over) setRunning(!S.running); };
+$("#sndBtn").onclick = () => setSound(!sndOn);
+setSound(sndOn);
 $("#speed").onclick = () => { if (!S) return; S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 0.5 : 1; $("#speed").textContent = (S.speed === 0.5 ? "½" : S.speed) + "×"; };
 $("#rollback").onclick = rollback;
 $("#menu").onclick = showMenu;
