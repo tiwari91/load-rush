@@ -122,6 +122,9 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .zone.full { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
 @media (prefers-reduced-motion: no-preference) { .card.suggest, .zone.target { animation: calmglow 2.6s ease-in-out infinite; } }
 @keyframes calmglow { 50% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 22px color-mix(in srgb, var(--accent) 50%, transparent); } }
+.whatsnew { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 10px 0 4px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); font-size: 13px; color: var(--ink-dim); }
+.whatsnew > b { color: var(--accent); } .whatsnew span { flex: 1 1 360px; } .whatsnew .btn { padding: 4px 12px; font-size: 12px; }
+.partcard a { color: var(--accent); }
 /* Learning path */
 .skillbar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 10px 0; }
 .skillbar i { display: block; height: 100%; background: var(--ok); }
@@ -1523,6 +1526,22 @@ function askChoice(key) {
 }
 
 /* ---- part cards: click a part on the board to see what it is for, and when it is the wrong fix ---- */
+/* Where to read about the real thing (all checked to open, 2 Nov 2026). */
+const READ_MORE = {
+  lb: ["Kubernetes Services", "https://kubernetes.io/docs/concepts/services-networking/service/"],
+  app: ["Kubernetes Deployments", "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"],
+  auto: ["Kubernetes autoscaling (HPA)", "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/"],
+  canary: ["Canary releases in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/canary/"],
+  breaker: ["Circuit breaker, by Martin Fowler", "https://martinfowler.com/bliki/CircuitBreaker.html"],
+  cache: ["Caching, AWS overview", "https://aws.amazon.com/caching/"],
+  queue: ["Amazon SQS", "https://aws.amazon.com/sqs/"],
+  worker: ["Kubernetes Jobs", "https://kubernetes.io/docs/concepts/workloads/controllers/job/"],
+  replica: ["RDS read replicas", "https://aws.amazon.com/rds/features/read-replicas/"],
+  standby: ["RDS Multi-AZ standby", "https://aws.amazon.com/rds/features/multi-az/"],
+  cdn: ["What is a CDN? (AWS)", "https://aws.amazon.com/what-is/cdn/"],
+  waf: ["AWS WAF rate-based rules", "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html"],
+  db: ["PostgreSQL documentation", "https://www.postgresql.org/docs/current/"],
+};
 const WRONG_FIX = {
   lb: "With a single app server there is nothing to share, so it only adds cost and one more hop.",
   app: "When the database is the slow part, more app servers just send it more work.",
@@ -1546,7 +1565,7 @@ function showPartCard(id, anchor) {
     <div class="pc-m">$${part.cost}/h · ready in ${part.boot}s · ${status}</div>
     <p>${part.what}</p>
     <p><b>When it is the wrong fix:</b> ${WRONG_FIX[p.type] || ""}</p>
-    <p class="pc-real">In real life: ${part.real}.</p>
+    <p class="pc-real">In real life: ${part.real}.${READ_MORE[p.type] ? ` <a href="${READ_MORE[p.type][1]}" target="_blank" rel="noopener" onclick="track('read-more','${p.type}')">Read more: ${READ_MORE[p.type][0]} ↗</a>` : ""}</p>
     ${p.fixed ? "" : `<button class="btn pc-rm">Remove it</button>`}`;
   card.hidden = false;
   const w = card.offsetWidth, h = card.offsetHeight;
@@ -2208,6 +2227,9 @@ function showMenu() {
   openSheet(`
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
+    ${store.get("loadrush-new-1", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
+      <span>Help that pauses and explains when health falls · tonight's <b>On call</b> shift with a handover note, decisions and an incident report · click any part on the board to learn when it is the wrong fix · your <b>learning path</b> of 13 skills · a quick question after each shift.</span>
+      <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
@@ -2234,6 +2256,7 @@ function showMenu() {
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#rescueSw").onchange = e => { rescueOn = e.target.checked; store.set("loadrush-rescue", rescueOn); };
   $("#presentSw").onchange = e => setPresent(e.target.checked);
+  if ($("#bNewOk")) $("#bNewOk").onclick = () => { store.set("loadrush-new-1", true); $("#whatsNew").remove(); };
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
   $("#bCopyProg").onclick = copyProgress;
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
