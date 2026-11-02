@@ -1508,7 +1508,7 @@ function showMenu() {
       <div class="acts" style="margin-top:8px"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
       <input type="text" id="progCode" class="progcode" hidden aria-label="Progress code" spellcheck="false" autocomplete="off">
       <div class="real" id="progMsg"></div>
-    </details>`, boardSeen ? closeSheet : null);
+    </details>`, () => { closeSheet(); $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`; });
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#presentSw").onchange = e => setPresent(e.target.checked);
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
