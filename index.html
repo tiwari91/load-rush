@@ -1416,7 +1416,7 @@ function tourCheck() {
 
 /* ================================================================== flow of the game */
 function setup(level) {
-  L = level; S = newState(); armed = null; parts = [];
+  L = level; S = newState(); armed = null; parts = []; if (typeof cancelDrag === "function") cancelDrag();
   for (const g of L.given) addPiece(g, { instant: true, fixed: g === "db" });
   $("#pager").innerHTML = "";
   renderTray(); layoutZones(); renderBoard(); updateRollback(); measure();
