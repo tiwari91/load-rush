@@ -10,7 +10,7 @@
 <title>Load Rush</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: a night-shift control room. Header bar, then three columns: parts tray | live system board | monitors, inspector and pager. */
 :root {
@@ -20,7 +20,7 @@
   --signal: #4fc8e8;      /* legit traffic + accent */
   --bot: #c77dff;         /* bot traffic */
   --ok: #43d39a; --warn: #f2b33d; --bad: #ff5c5c;
-  --display: "Chakra Petch", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --display: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
   --body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 }
@@ -36,12 +36,12 @@ button:focus-visible, .card:focus-visible, .zone:focus-visible, input:focus-visi
 /* header */
 header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; background: var(--ground);
   display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 14px; border-bottom: 1px solid var(--line); }
-.brand { font: 700 22px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; }
+.brand { font: 700 20px/1 var(--display); }
 .brand b { color: var(--signal); }
-.lvname { font: 500 15px var(--display); color: var(--ink-dim); letter-spacing: .04em; }
+.lvname { font: 500 15px var(--display); color: var(--ink-dim); }
 .hstats { display: flex; gap: 18px; margin-left: auto; align-items: center; flex-wrap: wrap; }
 .hstat { display: flex; flex-direction: column; line-height: 1.15; }
-.hstat small { font: 500 10px var(--mono); letter-spacing: .12em; color: var(--ink-faint); text-transform: uppercase; }
+.hstat small { font: 500 11.5px var(--body); color: var(--ink-faint); }
 .hstat span { font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
 .ctrl { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn { border: 1px solid var(--line-2); background: var(--panel-2); padding: 7px 12px; border-radius: 6px; font-weight: 600; font-size: 13px; }
@@ -68,7 +68,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .tile:hover { border-color: var(--line-2); }
 .tile .val { font: 500 22px var(--mono); font-variant-numeric: tabular-nums; }
 .tile .val em { font: 600 13px var(--body); font-style: normal; color: var(--ok); }
-.tile .hint { font-size: 11.5px; color: var(--ink-faint); }
+.tile .hint { display: none; }
 .tile canvas { width: 100%; height: 30px; display: block; }
 .tile .bar { display: block; height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; margin: 4px 0 2px; }
 .tile .bar i { display: block; height: 100%; background: var(--ok); transition: width .3s, background .3s; }
@@ -77,12 +77,12 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .zsub { font-size: 11px; color: var(--ink-faint); margin-top: -4px; }
 .paused { position: absolute; inset: auto 0 18px 0; margin: 0 auto; width: max-content; max-width: 90%; z-index: 3; display: flex; gap: 10px; align-items: center;
   background: var(--panel-2); border: 1px solid var(--signal); border-radius: 99px; padding: 8px 18px; font-size: 14px; pointer-events: none; }
-.paused b { font: 700 14px var(--display); color: var(--signal); letter-spacing: .06em; text-transform: uppercase; }
+.paused b { font: 700 14px var(--display); color: var(--signal); }
 .btn.big { font-size: 15px; padding: 9px 18px; }
-.btn.go.ready { animation: glow 1.4s infinite; }
+.btn.go.ready { box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 30%, transparent); }
 @keyframes glow { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--signal) 30%, transparent); } }
 @media (max-width: 760px) { .stage { grid-template-columns: minmax(0, 1fr); } .tray { flex-direction: row; overflow-x: auto; } .tray .card { min-width: 150px; } }
-.label { font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); }
+.label { font: 600 12.5px var(--body); color: var(--ink-dim); }
 
 /* parts tray */
 .tray { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -91,11 +91,11 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .card:hover { border-color: var(--line-2); background: var(--panel-2); }
 .card.armed { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal) inset; }
 .card.new::after { content: "NEW"; grid-column: 2; font: 600 9px var(--mono); color: var(--warn); letter-spacing: .1em; }
-.tag { grid-row: span 3; width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
+.tag { grid-row: span 2; width: 34px; height: 34px; border-radius: 6px; display: grid; place-items: center;
   font: 700 12px var(--display); letter-spacing: .03em; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--signal); }
 .card .nm { font-weight: 600; font-size: 14px; }
 .card .meta { font: 11px var(--mono); color: var(--ink-faint); }
-.card .what { grid-column: 2; font-size: 12px; color: var(--ink-dim); line-height: 1.3; }
+.card .what { display: none; }
 .tray-note { font-size: 12px; color: var(--ink-faint); margin-top: 4px; }
 
 /* sandbox controls */
@@ -107,8 +107,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .evbtns .btn { font-size: 11.5px; padding: 6px 6px; }
 
 /* board */
-.board-wrap { align-self: start; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background:
-  radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 22px 22px, var(--panel); }
+.board-wrap { align-self: start; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .board { position: relative; min-width: 640px; height: 380px; display: grid; grid-template-columns: 74px 1fr 1fr 1.3fr 1.2fr 1.2fr;
   grid-template-rows: 1fr 1fr; gap: 14px; padding: 18px; }
 #flow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -126,7 +125,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .zone.drop-bad { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
 .zone.alarm { border: 1px solid var(--bad); }
 .zhead { display: flex; align-items: center; gap: 6px; }
-.zname { font: 600 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); }
+.zname { font: 600 12.5px var(--body); color: var(--ink); }
 .load { margin-top: auto; }
 .load .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .load .bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .25s, background .25s; }
@@ -181,11 +180,20 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .ov[hidden] { display: none; }
 .ov { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: color-mix(in srgb, var(--ground) 82%, transparent);
   padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
-.sheet { width: min(800px, 100%); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 26px 28px; }
-.sheet h2 { font: 700 30px/1.1 var(--display); margin: 4px 0 8px; text-wrap: balance; letter-spacing: .02em; }
+.sheet { position: relative; width: min(760px, 100%); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 0 28px 26px; }
+.sheet-top { position: sticky; top: 0; z-index: 2; height: 0; margin: 0 -28px; }
+.sheet-top .sheet-x { position: absolute; top: 14px; right: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.sheet-x { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel-2); font-size: 22px; line-height: 1; color: var(--ink); }
+.sheet-x:hover { border-color: var(--ink-dim); }
+.sheet-x[hidden] { display: none; }
+#sheet { padding-top: 26px; }
+.sheet h2, .sheet .kick { padding-right: 44px; }
+details.more > summary { cursor: pointer; color: var(--ink-dim); font-weight: 600; padding: 6px 0; }
+details.more[open] > summary { margin-bottom: 8px; }
+.sheet h2 { font: 700 26px/1.2 var(--display); margin: 4px 0 8px; text-wrap: balance; }
 .sheet h3 { font: 700 16px var(--display); margin: 16px 0 6px; letter-spacing: .02em; }
 .sheet p { max-width: 66ch; color: var(--ink); }
-.sheet .kick { font: 500 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+.sheet .kick { font: 600 13px var(--body); color: var(--signal); }
 .sheet .kick.teach { color: var(--warn); }
 .sheet ul { padding-left: 18px; margin: 8px 0; } .sheet li { margin: 4px 0; max-width: 66ch; }
 .sheet .acts { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
@@ -195,7 +203,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .lv:hover:not(:disabled) { border-color: var(--signal); }
 .lv:disabled { opacity: .45; cursor: not-allowed; }
 .lv.sand { border-style: dashed; }
-.lv .n { font: 500 10px var(--mono); letter-spacing: .12em; color: var(--ink-faint); }
+.lv .n { font: 500 12px var(--body); color: var(--ink-faint); }
 .lv .t { font: 700 16px var(--display); }
 .lv .d { font-size: 12px; color: var(--ink-dim); }
 .lv .s { font: 13px var(--mono); color: var(--warn); letter-spacing: .1em; }
@@ -212,10 +220,10 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .switch small { font-weight: 400; color: var(--ink-dim); }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 14px 0; }
 .stats div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
-.stats small { display: block; font: 10px var(--mono); letter-spacing: .1em; color: var(--ink-faint); text-transform: uppercase; }
+.stats small { display: block; font: 12px var(--body); color: var(--ink-faint); }
 .stats b { font: 500 18px var(--mono); font-variant-numeric: tabular-nums; }
 .stars { font: 700 28px var(--display); color: var(--warn); letter-spacing: .15em; }
-.real { font: 12px var(--mono); color: var(--ink-dim); }
+.real { font: 13px var(--body); color: var(--ink-dim); }
 .real b { color: var(--signal); font-weight: 500; }
 .diagram { overflow-x: auto; margin: 10px 0 4px; background: var(--ground); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
 .diagram svg { display: block; min-width: 520px; width: 100%; height: auto; }
@@ -242,7 +250,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .spot { position: relative; z-index: 6; box-shadow: 0 0 0 3px var(--warn), 0 0 22px 4px color-mix(in srgb, var(--warn) 45%, transparent) !important; border-radius: 10px; }
 .tour { position: fixed; z-index: 16; width: min(340px, calc(100vw - 32px)); background: var(--panel); border: 2px solid var(--warn); border-radius: 12px; padding: 14px 16px;
   box-shadow: 0 12px 40px rgba(0,0,0,.5); }
-.tour .tstep { font: 600 10px var(--mono); letter-spacing: .14em; color: var(--warn); text-transform: uppercase; }
+.tour .tstep { font: 600 12px var(--body); color: var(--warn); }
 .tour .ttext { font-size: 15px; margin: 6px 0 10px; line-height: 1.45; }
 .tour .ttext b { color: var(--signal); }
 .tour .tacts { display: flex; gap: 8px; align-items: center; }
@@ -258,7 +266,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .tlm { stroke-width: 1; stroke-dasharray: 3 3; } .tlm.incident { stroke: var(--bad); } .tlm.fix { stroke: var(--ok); } .tlm.part { stroke: var(--signal); }
 .tlt { font: 10.5px var(--body); } .tlt.incident { fill: var(--bad); } .tlt.fix { fill: var(--ok); } .tlt.part { fill: var(--signal); }
 .hintbtn { margin-left: 8px; font-size: 12px; padding: 4px 10px; }
-.words { display: grid; grid-template-columns: minmax(130px, 200px) 1fr; gap: 6px 16px; margin: 10px 0; }
+.words { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; gap: 10px 16px; margin: 10px 0; }
 .words dt { font-weight: 600; color: var(--signal); } .words dd { margin: 0; color: var(--ink); }
 @media (max-width: 600px) { .words { grid-template-columns: 1fr; } .words dd { margin-bottom: 8px; } }
 body.present .stage, body.present header { zoom: 1.18; }
@@ -290,7 +298,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
 
 <div class="stage">
   <aside>
-    <div class="label" style="margin-bottom:8px">Parts · drag one onto the board</div>
+    <div class="label" style="margin-bottom:8px">Parts: drag one onto the board</div>
     <div class="tray" id="tray"></div>
     <p class="tray-note">You can also click a part, then click a column. The × on a part removes it.</p>
     <div class="sandbox" id="sandbox" hidden>
@@ -356,14 +364,16 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
       </div>
     </div>
 
+    <details class="more" id="moreBox"><summary>Show the numbers and what happened</summary>
     <div class="details">
       <div class="mon"><span class="label">Why? The numbers</span><div class="insp" id="insp"></div></div>
       <div class="mon"><span class="label">What happened</span><div class="pager" id="pager"></div></div>
     </div>
+    </details>
   </main>
 </div>
 
-<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+<div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true"><div class="sheet-top"><button class="sheet-x" id="sheetX" aria-label="Close" title="Close (Esc)">×</button></div><div id="sheet"></div></div></div>
 <div class="toast" id="toast"></div>
 <div class="tour" id="tour" hidden role="dialog" aria-label="Tutorial"></div>
 
@@ -1046,7 +1056,7 @@ function renderInspector() {
   $("#insp").innerHTML = `<div class="it">${d.title}</div>` + d.rows.map(r => `<div class="ir ${r.cls}"><span>${r.k}</span><b>${r.v}</b></div>`).join("") + `<div class="note">${d.note}</div>`;
   document.querySelectorAll(".zone[data-z]").forEach(z => z.classList.toggle("inspected", z.dataset.z === inspected));
 }
-function inspect(z) { inspected = z; renderInspector(); }
+function inspect(z) { inspected = z; renderInspector(); $("#moreBox").open = true; }
 
 /* ================================================================== drawing */
 function layoutZones() {
@@ -1065,7 +1075,7 @@ function renderTray() {
     const b = document.createElement("button");
     b.className = "card" + (L.fresh.includes(type) ? " new" : "") + (armed === type ? " armed" : "");
     b.dataset.type = type; b.title = `${p.what}\nIn real life: ${p.real}.`;
-    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="what">${p.short}</span><span class="meta">$${p.cost} an hour · ready in ${p.boot}s</span>`;
+    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="what">${p.short}</span><span class="meta">$${p.cost}/h · ready in ${p.boot}s</span>`;
     tray.appendChild(b);
   }
   $("#sandbox").hidden = !L.sandbox;
@@ -1267,7 +1277,7 @@ function diagramSvg(nodes) {
 function teach(key) {
   const c = (problem(key) || {}).teach; if (!c) return;
   setRunning(false);
-  $("#sheet").innerHTML = `
+  openSheet(`
     <div class="kick teach">Teach mode · the game is paused</div>
     <h2>${c.title}</h2>
     <div class="diagram">${diagramSvg(c.diagram)}</div>
@@ -1276,9 +1286,8 @@ function teach(key) {
     <h3>${c.q}</h3>
     <div class="choices">${c.options.map((o, i) => `<button class="choice" data-i="${i}">${o[0]}</button>`).join("")}</div>
     <div id="why"></div>
-    <div class="acts"><button class="btn go" id="bBack" hidden>Back to the board</button><button class="btn" id="bSkip">Skip</button></div>`;
-  $("#ov").hidden = false;
-  const back = () => { $("#ov").hidden = true; measure(); };
+    <div class="acts"><button class="btn go" id="bBack" hidden>Back to the board</button><button class="btn" id="bSkip">Skip</button></div>`, closeSheet);
+  const back = closeSheet;
   for (const b of document.querySelectorAll(".choice")) b.onclick = () => {
     const o = c.options[+b.dataset.i];
     b.classList.add(o[1] ? "right" : "wrong");
@@ -1331,13 +1340,26 @@ const WORDS = [
 ];
 function showWords() {
   if (S) setRunning(false);
-  $("#sheet").innerHTML = `<div class="kick">Words</div><h2>What the words mean</h2>
+  openSheet(`<div class="kick">Words</div><h2>What the words mean</h2>
     <dl class="words">${WORDS.map(([w, d]) => `<dt>${w}</dt><dd>${d}</dd>`).join("")}
     ${Object.values(PARTS).map(p => `<dt>${p.name}</dt><dd>${p.what} <span class="real">Real examples: ${p.real}.</span></dd>`).join("")}</dl>
-    <div class="acts"><button class="btn go" id="bCloseWords">Back to the game</button></div>`;
-  $("#ov").hidden = false;
-  $("#bCloseWords").onclick = () => { $("#ov").hidden = true; measure(); };
+    <div class="acts"><button class="btn go" id="bCloseWords">Back to the game</button></div>`, closeSheet);
+  $("#bCloseWords").onclick = closeSheet;
 }
+/* One popup at a time. onClose set = the × button, Esc and a click outside all close it. */
+let sheetClose = null, boardSeen = false;
+function openSheet(html, onClose) {
+  $("#sheet").innerHTML = html;
+  sheetClose = onClose || null;
+  $("#sheetX").hidden = !sheetClose;
+  $("#ov").hidden = false;
+  $("#ov .sheet").scrollTop = 0;
+}
+function closeSheet() { $("#ov").hidden = true; sheetClose = null; boardSeen = true; measure(); }
+$("#sheetX").onclick = () => sheetClose && sheetClose();
+$("#ov").addEventListener("click", e => { if (e.target === $("#ov") && sheetClose) sheetClose(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#ov").hidden && sheetClose) { e.preventDefault(); sheetClose(); } });
+document.querySelectorAll(".tile").forEach(t => { const h = t.querySelector(".hint"); if (h) t.title = h.textContent; });
 function setPresent(on) { presentOn = on; store.set("loadrush-present", on); document.body.classList.toggle("present", on); requestAnimationFrame(measure); }
 
 /* ================================================================== first-time tutorial (Launch Day) */
@@ -1393,7 +1415,7 @@ function load(level) {
   setup(level);
   $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
   if (teachOn || presentOn) { S.speed = 0.5; $("#speed").textContent = "½×"; } else $("#speed").textContent = "1×";
-  if (L.sandbox) { log("info", "Sandbox: move the sliders, add parts, and break things with the buttons on the left."); $("#ov").hidden = true; setRunning(true); measure(); return; }
+  if (L.sandbox) { log("info", "Sandbox: move the sliders, add parts, and break things with the buttons on the left."); closeSheet(); setRunning(true); return; }
   log("info", L.task);
   showBrief();
 }
@@ -1414,7 +1436,7 @@ function end(win) {
   store.set("loadrush-game", null);
   const next = LEVELS[LEVELS.indexOf(L) + 1];
   const errPct = S.total ? (100 * S.failed / S.total) : 0;
-  $("#sheet").innerHTML = `
+  openSheet(`
     <div class="kick">${win ? "Shift complete" : "Site down"}</div>
     <h2>${win ? "You kept it up." : "Site health hit 0%."}</h2>
     ${win ? `<div class="stars" aria-label="${st} of 3 stars">${"★".repeat(st)}${"☆".repeat(3 - st)}</div>` : ""}
@@ -1439,8 +1461,7 @@ function end(win) {
       ${win && next ? `<button class="btn go" id="bNext">Next shift: ${next.name}</button>` : ""}
       <button class="btn ${win && next ? "" : "go"}" id="bRetry">Try again</button>
       <button class="btn" id="bMenu">All shifts</button>
-    </div>`;
-  $("#ov").hidden = false;
+    </div>`, closeSheet);
   if ($("#bNext")) $("#bNext").onclick = () => load(next);
   $("#bRetry").onclick = () => load(L);
   $("#bMenu").onclick = showMenu;
@@ -1448,7 +1469,7 @@ function end(win) {
 }
 function showBrief() {
   const fresh = L.fresh.map(t => PARTS[t]);
-  $("#sheet").innerHTML = `
+  openSheet(`
     <div class="kick">Shift ${LEVELS.indexOf(L) + 1} of ${LEVELS.length} · ${Math.floor(L.duration / 60)}:${String(L.duration % 60).padStart(2, "0")} long · spend limit $${L.cap}/h</div>
     <h2>${L.name}</h2>
     <p>${L.brief}</p>
@@ -1456,51 +1477,44 @@ function showBrief() {
     ${fresh.length ? `<div class="label" style="margin-top:14px">New parts in your tray</div>
       <ul>${fresh.map(p => `<li><b>${p.name}</b> ($${p.cost}/h, ${p.boot}s to start). ${p.what} <span class="real">In real life: <b>${p.real}</b>.</span></li>`).join("")}</ul>` : ""}
     <p class="real">The game starts paused. The bar above the board always tells you what to do next.${teachOn ? " Teach mode is on: the game pauses to explain each problem." : ""}</p>
-    <div class="acts"><button class="btn go" id="bGo">Got it, show me the board</button><button class="btn" id="bMenu2">All shifts</button></div>`;
-  $("#ov").hidden = false;
-  $("#bGo").onclick = () => { $("#ov").hidden = true; measure(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } };
+    <div class="acts"><button class="btn go" id="bGo">Got it, show me the board</button><button class="btn" id="bMenu2">All shifts</button></div>`, () => $("#bGo").click());
+  $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } };
   $("#bMenu2").onclick = showMenu;
 }
 function showMenu() {
   if (S) setRunning(false);
   const unlocked = i => i === 0 || (stars[LEVELS[i - 1].id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
-  $("#sheet").innerHTML = `
-    <div class="kick">Night shift, site reliability</div>
-    <h2>Keep the site up while the traffic changes.</h2>
-    <p>Real traffic flows through your system in real time. Drag the missing parts onto the board, watch response time, errors and cost, and handle what breaks. Each shift teaches one fix that DevOps teams use.</p>
-    <ul class="howto">
-      <li><b>Watch</b> the dots: blue are users, purple are bots, red are failed requests.</li>
-      <li><b>Drag</b> parts from the left onto the board. Each costs money per hour and takes a few seconds to start.</li>
-      <li><b>Keep</b> the error budget above zero until the shift ends. Click any column or chart to see why the numbers are what they are.</li>
-    </ul>
-    <div class="label" style="margin-top:12px">Who is playing?</div>
-    <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
-    <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>(recommended the first time) half speed; pauses to explain each problem with a picture and a question</small></label>
-    <label class="switch" for="presentSw" style="margin-left:18px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Presenter mode <small>bigger text for a projector or screen share</small></label>
-    ${(() => { const g = gameFromSnapshot(store.get("loadrush-game", null)); return g && !(S && S.t > 0.5 && !S.over && S.running === false && L === g.L) ?
-      `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""; })()}
+  const g = gameFromSnapshot(store.get("loadrush-game", null));
+  const showResume = g && !(S && S.t > 0.5 && !S.over && S.running === false && L === g.L);
+  openSheet(`
+    <h2>Load Rush</h2>
+    <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
+    ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${LEVELS.map((lv, i) => `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
-        <span class="n">SHIFT ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
+        <span class="n">Shift ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
         <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}</span>
       </button>`).join("")}
-      <button class="lv sand" data-i="tour"><span class="n">NEW HERE?</span><span class="t">Tutorial</span><span class="d">A 1-minute guided start on Launch Day.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="sandbox"><span class="n">FREE PLAY</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="tour"><span class="n">New here?</span><span class="t">Tutorial</span><span class="d">A 1-minute guided start.</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="sandbox"><span class="n">Free play</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
     </div>
-    <div class="progress">
-      <div class="label">Your progress</div>
-      <p class="real">Stars and settings are saved in this browser only. Clearing site data, a private window, or a different browser or site starts fresh. Copy a code to keep a backup or move it.</p>
-      <div class="acts"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
+    <details class="more" style="margin-top:16px"><summary>Settings: level, teach mode, big text</summary>
+      <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
+      <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>half speed; pauses to explain each problem</small></label><br>
+      <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label>
+    </details>
+    <details class="more"><summary>Save or move your progress</summary>
+      <p class="real">Stars are saved in this browser only. Copy a code to keep a backup or move it to another browser.</p>
+      <div class="acts" style="margin-top:8px"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
       <input type="text" id="progCode" class="progcode" hidden aria-label="Progress code" spellcheck="false" autocomplete="off">
       <div class="real" id="progMsg"></div>
-    </div>`;
-  $("#ov").hidden = false;
+    </details>`, boardSeen ? closeSheet : null);
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#presentSw").onchange = e => setPresent(e.target.checked);
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
   $("#bCopyProg").onclick = copyProgress;
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
-  for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); showMenu(); };
+  for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); document.querySelectorAll(".role").forEach(x => x.classList.toggle("on", x === b)); };
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     load(b.dataset.i === "sandbox" ? SANDBOX : LEVELS[+b.dataset.i]);
@@ -1575,7 +1589,7 @@ function resumeGame(snap) {
   layoutZones(); renderBoard(); updateRollback(); measure();
   step(0.001); updateLive(); pushHist(); setRunning(false);
   $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
-  $("#ov").hidden = true;
+  closeSheet();
   log("good", "Your shift was restored. Press ▶ Resume to carry on.");
   return true;
 }
