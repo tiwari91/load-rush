@@ -106,6 +106,16 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .zone.full { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
 @media (prefers-reduced-motion: no-preference) { .card.suggest, .zone.target { animation: calmglow 2.6s ease-in-out infinite; } }
 @keyframes calmglow { 50% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 22px color-mix(in srgb, var(--accent) 50%, transparent); } }
+/* Part card (click a part on the board) */
+.partcard { position: fixed; z-index: 25; width: min(340px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 13px; color: var(--ink-dim); }
+.partcard .pc-h { display: flex; align-items: center; gap: 8px; } .partcard .pc-h b { color: var(--ink); font-size: 15px; flex: 1; }
+.partcard .tag { font: 600 11px var(--mono); color: var(--accent); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px; }
+.partcard .pc-x { background: none; border: 0; color: var(--ink-faint); font-size: 18px; cursor: pointer; }
+.partcard .pc-m { font: 11.5px var(--mono); color: var(--ink-faint); margin-top: 4px; }
+.partcard p { margin: 8px 0 0; } .partcard p b { color: var(--ink); } .partcard .pc-real { color: var(--ink-faint); }
+.partcard .pc-rm { margin-top: 10px; font-size: 12px; padding: 4px 10px; }
+.chip { cursor: pointer; }
+.pm.call { border-left-color: var(--signal, #6cb6ff); }
 /* Score, streak and incident report */
 .score { margin: 12px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .score .sc-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
@@ -425,6 +435,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
   </main>
 </div>
 
+<div class="partcard" id="partCard" hidden role="dialog" aria-label="About this part"></div>
 <div class="ov" id="ov"><div class="sheet" role="dialog" aria-modal="true"><div class="sheet-top"><button class="sheet-x" id="sheetX" aria-label="Close" title="Close (Esc)">×</button></div><div id="sheet"></div></div></div>
 <div class="toast" id="toast"></div>
 <div class="tour" id="tour" hidden role="dialog" aria-label="Tutorial"></div>
@@ -669,6 +680,30 @@ const ONCALL = {
     lesson: "Never let a slow outside service tie up your servers: set short timeouts and a circuit breaker.",
     real: "Resilience4j, Envoy timeouts, Polly" },
 };
+/* Choices a real on-call engineer gets asked to make mid-shift. Each changes the shift; none is a trick. */
+const DECISIONS = {
+  email: { title: "Marketing: send the sale email now?", ask: "Traffic is already high. Marketing wants to send the big sale email to every customer right now. You can ask them to wait 45 seconds.",
+    options: [
+      { label: "Send it now", pts: 0, run: () => { S.extra.push({ t0: S.t + 3, t1: S.t + 38, legit: 380 }); log("page", "The sale email is out. Visitors are arriving."); },
+        why: "It works if you already have room. If not, the rush lands on servers that are already busy." },
+      { label: "Ask them to wait 45 seconds", pts: 80, run: () => { S.extra.push({ t0: S.t + 45, t1: S.t + 80, legit: 380 }); log("info", "Marketing will send the email in 45 seconds. Use the time to add room."); },
+        why: "Traffic you control (emails, push alerts, batch jobs) can be timed. A short delay lets you add servers and warm the cache first." } ],
+    lesson: "Traffic you can schedule should not land at your busiest moment. Ask for a heads-up and a few minutes to prepare." },
+  budget: { title: "Finance: cut $8 an hour, starting now", ask: "Finance says the cloud bill is too high and asks you to cut $8 an hour from tonight's spend limit.",
+    options: [
+      { label: "Agree, and remove something idle", pts: 100, run: () => { L.cap -= 8; updateHeader(); log("info", `Spend limit is now $${L.cap} an hour. Click each column to see which parts are mostly idle.`); },
+        why: "Good if some parts are idle: check how busy each column is before you remove anything." },
+      { label: "Push back: it is a busy night", pts: 40, run: () => log("info", "Finance agreed to look again tomorrow. The spend limit stays."),
+        why: "Fair at peak time, with a reason. Offer a date to look at the bill when it is quiet." } ],
+    lesson: "Cut cost by removing what is idle, never what is busy, and do it on a quiet day when you can watch the effect." },
+  deploy: { title: "A developer wants to release a small fix now", ask: "A developer has a small fix ready and wants to release it right now, in the middle of your shift.",
+    options: [
+      { label: "Release it now", pts: 0, run: () => { if (Math.random() < 0.55) setTimeout(() => fire("deploy-bug", "The small fix is out, and errors are rising."), 2000); else log("good", "The fix went out cleanly this time."); },
+        why: "Sometimes fine, but a busy night is the worst time to find out it is not." },
+      { label: "Wait until traffic is quiet", pts: 80, run: () => log("info", "The fix waits for the morning. No surprises tonight."),
+        why: "Many teams freeze releases during busy times. A small fix can usually wait an hour." } ],
+    lesson: "Release when it is quiet, a little at a time (a canary), and keep the Roll back button close." },
+};
 function makeOnCall(day, practiceSeed) {
   const practice = practiceSeed != null, rand = seededRandom(practice ? practiceSeed : hashText("loadrush-oncall-" + day));
   const pick = arr => arr[Math.floor(rand() * arr.length)];
@@ -707,6 +742,8 @@ function makeOnCall(day, practiceSeed) {
     if (x.told) events.push({ t: Math.max(2, x.at - 18), kind: "info", text: "Reminder: " + x.forecast(x.at) });
     events.push({ t: x.at, kind: x.event || "page", text: x.told ? x.page : x.surprise });
   }
+  const dKey = pick(Object.keys(DECISIONS)), dAt = Math.round((incidents[0].at + incidents[1].at) / 2);
+  events.push({ t: dAt, kind: "choice", text: dKey });
   events.sort((a, b) => a.t - b.t);
   const peak = co.base * 1.25 + (kinds.includes("spike") ? 460 : 0) + (kinds.includes("images") ? 80 : 0);
   const extra = [...new Set(incidents.flatMap(x => x.parts))].reduce((a, t) => a + PARTS[t].cost * (t === "worker" ? 2 : 1), 0);
@@ -714,7 +751,7 @@ function makeOnCall(day, practiceSeed) {
   const tray = [...new Set(["app", "auto", "cache", "replica", ...incidents.flatMap(x => x.parts), ...(kinds.includes("checkout") ? ["queue", "worker"] : [])])];
   const date = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
   return {
-    id: practice ? "practice-" + practiceSeed : "oncall-" + day, oncall: { day, practice, company: co, incidents, date },
+    id: practice ? "practice-" + practiceSeed : "oncall-" + day, oncall: { day, practice, company: co, incidents, date, decision: { key: dKey, at: dAt } },
     name: practice ? `Practice on call · ${co.name}` : `On call · ${date}`, duration, cap,
     blurb: `${co.name}, ${co.what}. ${n} incidents tonight.`,
     brief: `You are on call tonight for <b>${co.name}</b>, ${co.what}. About ${co.base} visitors a second, climbing slowly. ${n} things will go wrong in the next 3 minutes. Some were announced; some were not.`,
@@ -864,7 +901,7 @@ function newState() {
     autoTick: 0, hist: { rps: [], bots: [], p95: [], err: [] }, m: null, tipHeld: {}, tipsShown: {}, fired: {},
     peak: 0, worstP95: 0, failed: 0, total: 0, spendSec: 0,
     release: null, dbDown: 0, failoverTo: null, azDown: 0, partnerSlow: 0, taught: {},
-    blame: {}, timeline: [], marks: [], tlSec: -1, hintUsed: false, hintKeys: {}, rescued: {}, seen: {}, helped: {} };
+    blame: {}, timeline: [], marks: [], tlSec: -1, hintUsed: false, hintKeys: {}, rescued: {}, seen: {}, helped: {}, extra: [], choices: [] };
 }
 /* A note on the end-of-shift timeline. kind: incident, fix or part. */
 function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
@@ -908,6 +945,8 @@ function fire(kind, text) {
     const lost = S.pieces.filter(p => p.type === "app" && p.az === "A");
     lost.forEach(p => killPiece(p.id));
     log("page", (text || "Zone A is down.") + ` ${lost.length} app server${lost.length === 1 ? "" : "s"} lost. New servers go to zone B until it is back.`);
+  } else if (kind === "choice") {
+    if (typeof askChoice === "function" && DECISIONS[text]) askChoice(text);
   } else if (kind === "partner-slow") {
     S.partnerSlow = PARTNER_TIME; log("page", text || "The payment provider now takes 8 seconds to answer.");
   } else log(kind, text);
@@ -947,6 +986,7 @@ function tickIncidents(dt) {
 function step(dt) {
   S.t += dt;
   const tr = L.traffic(S.t);
+  for (const x of S.extra || []) tr.legit += wave(S.t, x.t0, x.t1, x.legit, 5);   // traffic a decision added
   for (const p of S.pieces) if (p.bootLeft > 0) { p.bootLeft = Math.max(0, p.bootLeft - dt); if (p.bootLeft === 0 && typeof sndPing === "function") sndPing(); }
   L.events.forEach((e, i) => { if (!S.fired[i] && S.t >= e.t) { S.fired[i] = true; fire(e.kind, e.text); } });
   tickIncidents(dt);
@@ -1241,6 +1281,8 @@ function scoreFor(S, L, win) {
   add("Fixed after a pointer", shown * 40, `${shown} × 40`);
   add("Fixed fast (under 12s)", fast * 30, `${fast} × 30`);
   const avg = S.t ? S.spendSec / S.t : 0;
+  const calls = (S.choices || []).reduce((a, c) => a + c.pts, 0);
+  add("Good calls", calls, (S.choices || []).map(c => c.label).join(", "));
   if (win) add("Money left over", Math.max(0, L.cap - avg) * 8, `$${Math.max(0, L.cap - avg).toFixed(1)}/h × 8`);
   return { total: rows.reduce((a, r) => a + r.pts, 0), rows, self, shown, done, keys };
 }
@@ -1329,9 +1371,75 @@ function incidentReport(S, oc) {
       <p><small>${x.told ? "Forecast" : "Surprise"}:</small> ${x.told ? x.forecast(x.at) : x.surprise}${happened && lost >= 1 ? ` It cost <b>${Math.round(lost)}%</b> of site health.` : ""}</p>
       <p><b>Lesson:</b> ${x.lesson} <span class="real">In real life: ${x.real}.</span></p></li>`);
   }
+  for (const c of S.choices || []) {
+    const d = DECISIONS[c.key];
+    rows.push(`<li class="pm call"><div class="pm-h"><b>${clockText(c.at)} · Decision: ${d.title}</b><span>You chose: ${c.label}${c.pts ? ` (+${c.pts})` : ""}</span></div>
+      <p>${c.why}</p><p><b>Lesson:</b> ${d.lesson}</p></li>`);
+  }
   return { squares: sq.join(""), streak: oncallStreak(),
     html: `<div class="label" style="margin-top:14px">Incident report <small>(what happened, and what to remember)</small></div><ol class="pms">${rows.join("")}</ol>` };
 }
+
+/* ---- a decision mid-shift: the game pauses, you choose, it carries on ---- */
+function askChoice(key) {
+  const d = DECISIONS[key]; if (!d || S.over) return;
+  const was = S.running; setRunning(false);
+  if (typeof sndChime === "function") sndChime();
+  mark("Decision", "incident");
+  openSheet(`
+    <div class="kick teach">A decision · the game is paused</div>
+    <h2>${d.title}</h2>
+    <p>${d.ask}</p>
+    <div class="choices">${d.options.map((o, i) => `<button class="choice" data-i="${i}">${o.label}</button>`).join("")}</div>
+    <p class="real">There is no trick answer. Your choice changes the rest of the shift, and the incident report explains the trade-off.</p>`, () => {
+      // closed without choosing: the other team goes ahead with their own plan
+      const o = d.options[0];
+      S.choices.push({ key, label: "No answer", pts: 0, why: "Not answering is a decision too: the other team went ahead with their own plan (" + o.label.toLowerCase() + ").", title: d.title, at: S.t });
+      closeSheet(); o.run(); if (was) setRunning(true);
+    });
+  for (const b of document.querySelectorAll(".choice")) b.onclick = () => {
+    const o = d.options[+b.dataset.i];
+    S.choices.push({ key, label: o.label, pts: o.pts, why: o.why, title: d.title, at: S.t });
+    closeSheet(); o.run(); mark(o.label, "fix");
+    if (was) setRunning(true);
+  };
+}
+
+/* ---- part cards: click a part on the board to see what it is for, and when it is the wrong fix ---- */
+const WRONG_FIX = {
+  lb: "With a single app server there is nothing to share, so it only adds cost and one more hop.",
+  app: "When the database is the slow part, more app servers just send it more work.",
+  auto: "It reacts after load rises, and each new server needs seconds to start. For a peak you know about, add servers before it.",
+  canary: "Rarely wrong: on a busy site it is cheap insurance for every release.",
+  breaker: "If the outside service is fast and reliable, a timeout that is too short fails good requests.",
+  cache: "Data that must be exact this second (stock left at checkout) should skip the cache or expire quickly.",
+  queue: "When the user needs the answer right away (did my payment go through?), a queue only delays it.",
+  worker: "Workers with an empty queue cost money doing nothing.",
+  replica: "Writes still go to the primary, and copies lag a little behind it. Slow to start, so add them before you need them.",
+  standby: "It answers nothing until a failure. It is insurance, and it costs money every hour.",
+  cdn: "Pages that are different for each user (cart, account) cannot be served from the CDN.",
+  waf: "Real customers behind one shared office address can be blocked if the limit is too strict.",
+  db: "There is only one primary. You cannot add a second one to share the writes here.",
+};
+function showPartCard(id, anchor) {
+  const p = S.pieces.find(x => x.id === id); if (!p) return;
+  const part = PARTS[p.type], card = $("#partCard"), r = anchor.getBoundingClientRect();
+  const status = p.bootLeft > 0 ? `Starting: ready in ${Math.ceil(p.bootLeft)}s` : p.type === "app" && S.m ? `Running in zone ${p.az || "A"}. App servers are ${Math.round(S.m.uA * 100)}% busy.` : "Running.";
+  card.innerHTML = `<div class="pc-h"><span class="tag">${part.tag}</span><b>${part.name}</b><button class="pc-x" aria-label="Close">×</button></div>
+    <div class="pc-m">$${part.cost}/h · ready in ${part.boot}s · ${status}</div>
+    <p>${part.what}</p>
+    <p><b>When it is the wrong fix:</b> ${WRONG_FIX[p.type] || ""}</p>
+    <p class="pc-real">In real life: ${part.real}.</p>
+    ${p.fixed ? "" : `<button class="btn pc-rm">Remove it</button>`}`;
+  card.hidden = false;
+  const w = card.offsetWidth, h = card.offsetHeight;
+  card.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+  card.style.top = (r.bottom + h + 12 < innerHeight ? r.bottom + 8 : Math.max(8, r.top - h - 8)) + "px";
+  card.querySelector(".pc-x").onclick = () => { card.hidden = true; };
+  const rm = card.querySelector(".pc-rm"); if (rm) rm.onclick = () => { removePiece(p.id); card.hidden = true; };
+}
+document.addEventListener("pointerdown", e => { const c = document.getElementById("partCard"); if (c && !c.hidden && !c.contains(e.target) && !e.target.closest(".chip")) c.hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { const c = document.getElementById("partCard"); if (c) c.hidden = true; } });
 
 /* ---- coaching: which part to use, where it goes, and a pause to help when health falls ---- */
 const NAME_TO_TYPE = Object.fromEntries(Object.entries(PARTS).map(([k, p]) => [p.name.toLowerCase(), k]));
@@ -1758,6 +1866,7 @@ function showWords() {
 /* One popup at a time. onClose set = the × button, Esc and a click outside all close it. */
 let sheetClose = null, boardSeen = false;
 function openSheet(html, onClose) {
+  const pc = document.getElementById("partCard"); if (pc) pc.hidden = true;
   $("#sheet").innerHTML = html;
   sheetClose = onClose || null;
   $("#sheetX").hidden = !sheetClose;
@@ -2023,6 +2132,8 @@ $("#tray").addEventListener("keydown", e => {
   armed = card.dataset.type; renderTray(); toast(`${PARTS[armed].name} picked up. Click a column on the board to place it.`);
 });
 $("#board").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (chip && !armed && !e.target.closest(".x")) { showPartCard(+chip.dataset.id, chip); return; }
   const z = e.target.closest(".zone[data-z]"); if (!z) return;
   if (armed && z.dataset.z !== "users") { if (place(armed, z.dataset.z) !== false) { armed = null; renderTray(); } return; }
   inspect(z.dataset.z);
