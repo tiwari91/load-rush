@@ -4,7 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Load Rush: a real-time DevOps game. Drag load balancers, caches, queues and more onto a live system and keep it up.">
-<style>[hidden]{display:none!important} body{margin:0}</style>
+<style>[hidden]{display:none!important} body{margin:0}
+/* Phones: nothing scrolls sideways except the board inside its box, and the parts sit in a strip along the bottom
+   (tap a part, then tap a column). */
+@media (max-width: 760px) {
+  .stage > * { min-width: 0; }
+  body { padding-bottom: 96px; }
+  aside .label, aside .tray-note { display: none; }
+  .tray { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; flex-direction: row !important; overflow-x: auto; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--ground, #1b1c1f) 94%, transparent); border-top: 1px solid var(--line); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .tray .card { min-width: 132px; flex: 0 0 auto; padding: 6px 8px; }
+  .tray .card .meta { font-size: 10px; }
+  .board-wrap { align-self: stretch; max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .zone .zsub { display: none; }
+  .partcard { left: 8px !important; right: 8px; width: auto; }
+  #toast { bottom: calc(100px + env(safe-area-inset-bottom)) !important; }
+}
+</style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
 <body>
@@ -112,6 +128,8 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .skillgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .sk { padding: 9px 11px; border-radius: 8px; border: 1px dashed var(--line-2); display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-faint); }
 .sk b { color: var(--ink-dim); font-size: 13.5px; } .sk small { color: var(--ink-faint); font-size: 11px; }
+button.sk { text-align: left; font: inherit; cursor: pointer; background: transparent; }
+.sk.go:hover { border-color: var(--accent); } .sk.go small { color: var(--accent); }
 .sk.on { border-style: solid; border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 6%, transparent); }
 .sk.on b { color: var(--ok); }
 .newskill { margin: 12px 0 4px; padding: 10px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
@@ -2082,13 +2100,14 @@ function showBrief() {
   $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } };
   $("#bMenu2").onclick = showMenu;
 }
+function unlockedId(id) { const i = LEVELS.findIndex(l => l.id === id); return i === 0 || (i > 0 && ((stars[LEVELS[i - 1].id] || 0) > 0 || (stars[id] || 0) > 0)); }
 function skillsHtml() {
   const known = store.get("loadrush-skills", {}), n = SKILLS.filter(s => known[s.id]).length;
   const lvName = id => (LEVELS.find(l => l.id === id) || {}).name;
   return `<details class="more skills" style="margin-top:16px" ${n ? "" : "open"}><summary>Your learning path: ${n} of ${SKILLS.length} skills</summary>
     <div class="skillbar"><i style="width:${100 * n / SKILLS.length}%"></i></div>
-    <div class="skillgrid">${SKILLS.map(sk => { const k = known[sk.id]; return `<div class="sk ${k ? "on" : ""}">
-      <b>${k ? "✓ " : ""}${sk.name}</b><span>${k ? `Shown in ${k.where}` : sk.how}</span>${!k && sk.level ? `<small>Taught in: ${lvName(sk.level)}</small>` : ""}</div>`; }).join("")}</div></details>`;
+    <div class="skillgrid">${SKILLS.map(sk => { const k = known[sk.id], go = !k && sk.level && unlockedId(sk.level); return `<${go ? `button class="sk go" data-lv="${sk.level}"` : `div class="sk ${k ? "on" : ""}"`}>
+      <b>${k ? "✓ " : ""}${sk.name}</b><span>${k ? `Shown in ${k.where}` : sk.how}</span>${!k && sk.level ? `<small>${go ? "Play" : "Taught in"}: ${lvName(sk.level)}${go ? " →" : " (locked)"}</small>` : ""}</${go ? "button" : "div"}>`; }).join("")}</div></details>`;
 }
 function bestOf(id) { const b = store.get("loadrush-scores", {})[id]; return b ? `<span class="best">best ${b.toLocaleString()} points</span>` : ""; }
 function oncallCard() {
@@ -2137,6 +2156,7 @@ function showMenu() {
   $("#bCopyProg").onclick = copyProgress;
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); document.querySelectorAll(".role").forEach(x => x.classList.toggle("on", x === b)); };
+  for (const b of document.querySelectorAll(".sk.go")) b.onclick = () => load(LEVELS.find(l => l.id === b.dataset.lv));
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
