@@ -125,6 +125,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .whatsnew { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 10px 0 4px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); font-size: 13px; color: var(--ink-dim); }
 .whatsnew > b { color: var(--accent); } .whatsnew span { flex: 1 1 360px; } .whatsnew .btn { padding: 4px 12px; font-size: 12px; }
 .partcard a { color: var(--accent); }
+.guide-list { padding-left: 18px; display: grid; gap: 6px; } .guide-list li { color: var(--ink-dim); } .guide-list b { color: var(--ink); }
 /* Learning path */
 .skillbar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 10px 0; }
 .skillbar i { display: block; height: 100%; background: var(--ok); }
@@ -1479,20 +1480,22 @@ function headsUp(ev) {
   const cost = need.reduce((a, t) => a + PARTS[t].cost * (ev.spare && t === "app" ? ev.spare : 1), 0), fits = spendRate() + cost <= L.cap;
   const names = need.map(t => `<b>${ev.spare && t === "app" ? ev.spare + " spare " + PARTS[t].name + "s" : PARTS[t].name}</b> ($${PARTS[t].cost}/h, ready in ${PARTS[t].boot}s)`).join(" and ");
   const was = S.running; setRunning(false);
+  const showParts = role === "mid" || ev.shown;
   if (typeof sndChime === "function") sndChime();
-  mark("Heads-up", "incident");
+  if (!ev.shown) mark("Heads-up", "incident");
   openSheet(`
     <div class="kick teach">Heads-up · the game is paused</div>
     <h2>A warning is a chance to prepare</h2>
     <p><b>The warning:</b> ${ev.text.replace(/^Reminder: /, "")}</p>
-    <p><b>What a good engineer does now:</b> add ${names}. Parts take seconds to start, so adding them after the trouble starts is often too late.</p>
-    ${fits ? "" : `<p><b>Your spend limit:</b> this needs $${cost} an hour more than you have left. Remove a part that is mostly idle first.</p>`}
-    <div class="acts">${fits ? `<button class="btn go" id="hDo">Do it for me</button>` : ""}<button class="btn ${fits ? "" : "go"}" id="hSelf">I'll do it myself</button><button class="btn" id="hSkip">Not now</button></div>
+    ${showParts ? `<p><b>What a good engineer does now:</b> add ${names}. Parts take seconds to start, so adding them after the trouble starts is often too late.</p>` : `<p><b>Your move:</b> what could break because of this, and what would you add now? Parts take seconds to start, so preparing after the trouble starts is often too late.</p>`}
+    ${!showParts || fits ? "" : `<p><b>Your spend limit:</b> this needs $${cost} an hour more than you have left. Remove a part that is mostly idle first.</p>`}
+    <div class="acts">${showParts && fits ? `<button class="btn go" id="hDo">Do it for me</button>` : ""}<button class="btn ${showParts && fits ? "" : "go"}" id="hSelf">I'll do it myself</button><button class="btn" id="hSkip">Not now</button>${showParts ? "" : `<button class="btn" id="hHint">Show what to add (2 stars at most)</button>`}</div>
     <p class="real">Preparing yourself counts for more points and skills than letting the game do it.</p>`, () => back());
   function back() { closeSheet(); if (was) setRunning(true); }
-  $("#hSelf").onclick = () => { S.prepHint = need[0]; showSuggestion(); back(); };
+  $("#hSelf").onclick = () => { if (showParts) { S.prepHint = need[0]; showSuggestion(); } back(); };
+  if ($("#hHint")) $("#hHint").onclick = () => { S.hintUsed = true; mark("Hint used", "fix"); closeSheet(); headsUp(Object.assign({}, ev, { shown: true })); };
   $("#hSkip").onclick = back;
-  if (fits) $("#hDo").onclick = () => {
+  if (showParts && fits) $("#hDo").onclick = () => {
     for (const t of need) for (let k = 0; k < (ev.spare && t === "app" ? ev.spare : 1); k++) place(t, PARTS[t].zone);
     for (const k of ev.keys || []) S.helped[k] = "do";
     log("coach", `Prepared for you: ${need.map(t => PARTS[t].name).join(", ")}. Next time, read the warning and add it yourself.`);
@@ -1611,6 +1614,7 @@ function rescue(key, lvl) {
   // Fix the app servers and the bottleneck moves: requests that failed there will all reach the database.
   const dbNext = t === "app" && S.m && S.m.dbUp ? S.m.uD * Math.max(1, S.m.uA) : 0;
   const addCache = dbNext > 0.9 && L.tray.includes("cache") && !count("cache");
+  const withFix = role === "mid" || (S.hintKeys && S.hintKeys[key]);   // Staff and Principal work out the fix, or pay a star for it
   let todo = p.fix || "Click the columns to see which one is full.";
   if (part && over) todo = `The fix is ${/^[aeiou]/i.test(part.name) ? "an" : "a"} <b>${part.name}</b> ($${part.cost}/h), but you are at your $${L.cap}/h spend limit. Remove a part that is mostly idle first (click a column to see how busy it is), then add it.`;
   else if (part && maxed) todo = `You already have the most <b>${part.name}s</b> allowed (${part.max}). Take load off them another way: ${p.fix}`;
@@ -1625,21 +1629,23 @@ function rescue(key, lvl) {
     ${c.diagram ? `<div class="diagram">${diagramSvg(c.diagram)}</div>` : ""}
     <p><b>What is happening:</b> ${now}</p>
     ${c.explain ? `<p><b>Why:</b> ${c.explain}</p>` : ""}
-    <p><b>What to do:</b> ${todo}</p>
-    ${dbNext > 0.9 ? `<p><b>Watch out for what comes next:</b> once the app servers keep up, every request they used to drop reaches the database, which will be about ${Math.round(dbNext * 100)}% busy. ${addCache ? "A <b>Cache</b> takes repeated reads off it; <i>Do it for me</i> adds one too." : "Plan for it now."}</p>` : ""}
+    ${withFix ? `<p><b>What to do:</b> ${todo}</p>` : `<p><b>Your move:</b> what would you change? Click the columns to see their numbers, and the parts to see what each one is for.</p>`}
+    ${withFix && dbNext > 0.9 ? `<p><b>Watch out for what comes next:</b> once the app servers keep up, every request they used to drop reaches the database, which will be about ${Math.round(dbNext * 100)}% busy. ${addCache ? "A <b>Cache</b> takes repeated reads off it; <i>Do it for me</i> adds one too." : "Plan for it now."}</p>` : ""}
     <div class="acts">
-      ${canDo ? `<button class="btn go" id="rDo">Do it for me</button>` : ""}
-      <button class="btn ${canDo ? "" : "go"}" id="rShow">${canDo ? "Show me where, I'll do it" : "Back to the board"}</button>
+      ${withFix && canDo ? `<button class="btn go" id="rDo">Do it for me</button>` : ""}
+      <button class="btn ${withFix && canDo ? "" : "go"}" id="rShow">${withFix && canDo ? "Show me where, I'll do it" : "Back to the board"}</button>
+      ${withFix ? "" : `<button class="btn" id="rHint">Show the fix (this shift then gets 2 stars at most)</button>`}
     </div>
     <p class="real">The game carries on at half speed after this, so you have time. You can turn this help off in Menu → Settings.</p>`, back);
   function back() { closeSheet(); S.speed = 0.5; $("#speed").textContent = "½×"; guideKey = ""; setRunning(true); updateGuide(); }
   $("#rShow").onclick = back;
-  if (canDo && canRoll) $("#rDo").onclick = () => {
+  if ($("#rHint")) $("#rHint").onclick = () => { useHint(key); closeSheet(); rescue(key, lvl); };
+  if (withFix && canDo && canRoll) $("#rDo").onclick = () => {
     S.helped[key] = "do"; S.rescued[key] = 2;
     rollback(); log("coach", "Rolled back for you. The old version is coming back on every server (a few seconds). Next time a release looks bad, the red Roll back button is the fastest fix.");
     back();
   };
-  else if (canDo) $("#rDo").onclick = () => {
+  else if (withFix && canDo) $("#rDo").onclick = () => {
     // Add enough to fix it, not just one: for servers and workers, as many as the load needs (to about 80% busy),
     // inside the spend limit. An autoscaler on offer goes in too, so it keeps up from here.
     let want = 1;
@@ -2175,6 +2181,26 @@ function end(win) {
   $("#bMenu").onclick = showMenu;
   log(win ? "good" : "page", win ? "Shift complete." : "Error budget is gone. Site down.");
 }
+function boardGuide(force) {
+  if (!force && (store.get("loadrush-boardguide", false) || tourStep >= 0)) return;
+  const was = S && S.running; if (S) setRunning(false);
+  openSheet(`
+    <div class="kick">How to read the board</div>
+    <h2>Everything on this screen, in one minute</h2>
+    <ul class="guide-list">
+      <li><b>The bar at the top</b> always says what to do next: get ready, all good, or which problem is hurting the site.</li>
+      <li><b>Site health</b> is how much failure you can still afford this shift. At 0% the site is down. <b>Page speed</b> and <b>Failed pages</b> are what visitors feel.</li>
+      <li><b>The board</b> follows one visit from left to right: visitors, the edge, the load balancer, your app servers, then the cache, background jobs and the database.</li>
+      <li><b>Dots</b> are visits. Blue: people. Purple: bots. Green at the end: answered by the cache or CDN. Red: failed. Dots bunching at a column's door mean it is full.</li>
+      <li><b>Column colours:</b> amber means getting full, red means over capacity. The bar at the bottom of each column shows how busy it is.</li>
+      <li><b>Parts</b> are on the left (at the bottom on a phone). Drag one onto a column, or tap it and then tap the column. Each costs money every hour, inside your <b>spend limit</b>.</li>
+      <li><b>Click a column</b> for the numbers behind it. <b>Click a part on the board</b> to see what it does and when it is the wrong fix.</li>
+    </ul>
+    <p class="real">You can open this again from the Menu.</p>
+    <div class="acts"><button class="btn go" id="bGuideOk">Got it</button></div>`, done);
+  function done() { store.set("loadrush-boardguide", true); closeSheet(); if (was) setRunning(true); }
+  $("#bGuideOk").onclick = done;
+}
 function showBrief() {
   if (L.oncall) {
     const oc = L.oncall, told = oc.incidents.filter(x => x.told), hidden = oc.incidents.length - told.length;
@@ -2188,7 +2214,7 @@ function showBrief() {
       <p class="real">${L.tray.map(t => `<b>${PARTS[t].name}</b> $${PARTS[t].cost}/h`).join(" · ")}</p>
       <p class="real">Points for health kept, for fixing each problem yourself before the help card steps in, for fixing it fast, and for money left over. The game starts paused: get ready, then press ▶ Start shift.</p>
       <div class="acts"><button class="btn go" id="bGo">Got it, show me the board</button><button class="btn" id="bMenu2">All shifts</button></div>`, () => $("#bGo").click());
-    $("#bGo").onclick = closeSheet; $("#bMenu2").onclick = showMenu;
+    $("#bGo").onclick = () => { closeSheet(); boardGuide(); }; $("#bMenu2").onclick = showMenu;
     return;
   }
   const fresh = L.fresh.map(t => PARTS[t]);
@@ -2201,7 +2227,7 @@ function showBrief() {
       <ul>${fresh.map(p => `<li><b>${p.name}</b> ($${p.cost}/h, ${p.boot}s to start). ${p.what} <span class="real">In real life: <b>${p.real}</b>.</span></li>`).join("")}</ul>` : ""}
     <p class="real">The game starts paused. The bar above the board always tells you what to do next.${teachOn ? " Teach mode is on: the game pauses to explain each problem." : ""}</p>
     <div class="acts"><button class="btn go" id="bGo">Got it, show me the board</button><button class="btn" id="bMenu2">All shifts</button></div>`, () => $("#bGo").click());
-  $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } };
+  $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } else boardGuide(); };
   $("#bMenu2").onclick = showMenu;
 }
 function unlockedId(id) { const i = LEVELS.findIndex(l => l.id === id); return i === 0 || (i > 0 && ((stars[LEVELS[i - 1].id] || 0) > 0 || (stars[id] || 0) > 0)); }
@@ -2250,6 +2276,7 @@ function showMenu() {
       <label class="switch" for="rescueSw" style="margin-top:8px"><input type="checkbox" id="rescueSw" ${rescueOn ? "checked" : ""}> Help me when health drops <small>pauses at 60% and 25% health to explain what is wrong and how to fix it</small></label><br>
       <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label>
     </details>
+    <p style="margin:10px 0 0"><button class="btn" id="bGuide">How to read the board</button></p>
     <details class="more"><summary>Save or move your progress</summary>
       <p class="real">Stars are saved in this browser only. Copy a code to keep a backup or move it to another browser.</p>
       <div class="acts" style="margin-top:8px"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
@@ -2259,6 +2286,7 @@ function showMenu() {
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#rescueSw").onchange = e => { rescueOn = e.target.checked; store.set("loadrush-rescue", rescueOn); };
   $("#presentSw").onchange = e => setPresent(e.target.checked);
+  if ($("#bGuide")) $("#bGuide").onclick = () => boardGuide(true);
   if ($("#bNewOk")) $("#bNewOk").onclick = () => { store.set("loadrush-new-1", true); $("#whatsNew").remove(); };
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
   $("#bCopyProg").onclick = copyProgress;
