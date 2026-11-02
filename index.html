@@ -1281,7 +1281,12 @@ function decodeProgress(code) {
     if (!p || typeof p.stars !== "object") return null;
     const stars = {};
     for (const [k, v] of Object.entries(p.stars)) if ([...LEVELS.map(l => l.id)].includes(k) && [1, 2, 3].includes(v)) stars[k] = v;
-    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour };
+    const plainObj = (o, ok) => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).filter(([k, v]) => /^[\w-]{1,40}$/.test(k) && ok(v)));
+    const skills = plainObj(p.skills, v => v && typeof v === "object" && /^[\p{L}\p{N} ·:'.,-]{1,60}$/u.test(v.where) && /^\d{4}-\d{2}-\d{2}$/.test(v.at));
+    for (const k of Object.keys(skills)) if (!SKILLS.some(s => s.id === k)) delete skills[k];
+    const scores = plainObj(p.scores, v => Number.isFinite(v) && v >= 0 && v < 1e6);
+    const oncall = plainObj(p.oncall, v => Number.isFinite(v) && v >= 0 && v < 1e6);
+    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall };
   } catch { return null; }
 }
 /* Hourly cost as a rough monthly figure (730 hours in a month). */
@@ -1899,6 +1904,10 @@ function timelineSvg(S, L) {
 }
 /* Plain meanings of the words used in the game. */
 const WORDS = [
+  ["On call", "Being the person who answers when the site breaks, out of hours. You get paged, you fix it or call for help, and you write down what happened."],
+  ["Handover note", "What the team before you passes on: known risks, planned releases, things to watch. Read it before the shift starts."],
+  ["Incident report", "A short write-up after something breaks: what happened, what it cost, how it was fixed, and what to change. Good teams write it without blame (a blameless postmortem)."],
+  ["Change freeze", "A time when no releases go out, usually during the busiest hours, so nothing new can break."],
   ["Site health", "How much failure you can still afford this shift. It drops when pages fail or load slowly. Real teams call this an error budget, and the target behind it an SLO (service level objective)."],
   ["Page speed (p95)", "95 of every 100 pages load faster than this number. The slowest 5 are what people remember."],
   ["Visitors a second", "How many page requests arrive each second. Engineers say requests per second, or throughput."],
@@ -2253,7 +2262,8 @@ function saveGame() { store.set("loadrush-game", gameSnapshot(S, L)); }
 addEventListener("pagehide", saveGame);
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
 function copyProgress() {
-  const code = encodeProgress({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false) });
+  const code = encodeProgress({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false),
+    skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}) });
   const box = $("#progCode"); box.value = code; box.hidden = false; box.select();
   const done = () => { $("#progMsg").textContent = "Copied. Paste it into Load progress on any browser or computer."; };
   try { navigator.clipboard.writeText(code).then(done, () => { $("#progMsg").textContent = "Select the code above and copy it."; }); }
@@ -2265,6 +2275,7 @@ function loadProgress() {
   stars = p.stars; store.set("loadrush-stars", stars);
   role = p.role; store.set("loadrush-role", role);
   setTeach(p.teach); setPresent(p.present); store.set("loadrush-tour-done", p.tour);
+  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall);
   showMenu(); toast(`Progress loaded: ${Object.keys(stars).length} shift${Object.keys(stars).length === 1 ? "" : "s"} with stars.`);
 }
 

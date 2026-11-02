@@ -21,11 +21,27 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 
 There is also a Sandbox with traffic sliders and buttons to break things on purpose.
 
+## On call (a new shift every day)
+
+The top of the menu has **tonight's on-call shift**: a made-up company, 3 incidents (4 at weekends) drawn from
+the game's own problems, and the same shift for everyone on the same day. A **handover note** announces some
+incidents; others are a surprise. Halfway through, someone asks you for a **decision** (send the marketing email
+now? cut the budget? release a fix mid-shift?). Afterwards you get **points**, an **incident report** (what
+happened, what it cost, how you handled it, the lesson, and the real-world tools), your streak, and a result
+you can copy and share. **Practice on call** gives random shifts as often as you like.
+
 ## For teaching
 
 - **Tutorial:** the first time you open Launch Day, a short guided walk-through points at exactly where to drag. Replay it from the menu.
 
+- **Help when health drops** (on by default): at 60% and 25% health, or when it is falling fast, the game pauses
+  and explains what is happening, why, what to do and what comes next. *Do it for me* adds enough to fix it, or
+  *Show me where* highlights the part and the column. The game then carries on at half speed.
 - **Teach mode** pauses the game when something goes wrong, shows a small diagram, and asks what you would do.
+- **Part cards:** click any part on the board to see what it does, what it costs, when it is the wrong fix, and
+  its real-world name.
+- **Learning path:** 13 skills (scaling out, caching, CDN, rate limiting, queues, canaries, failover, zones,
+  timeouts, autoscaling, cost, judgement), each ticked off the first time you show it in a shift.
 - **Who is playing:** Mid-level gets hints; Staff and Principal get fewer hints and discussion questions after each shift.
 - **After each shift:** a chart of site health with what happened and what you did, plus the problem that hurt most and its fix.
 - **Words:** a plain glossary of every term in the game.
@@ -34,4 +50,5 @@ There is also a Sandbox with traffic sliders and buttons to break things on purp
 
 The numbers are a simple model chosen to teach the ideas, not a benchmark of any real product.
 
-One HTML file, no build step, no tracking. Progress is kept only in your browser: a shift in progress is saved every few seconds and can be resumed after a reload, and **Menu → Copy my progress** gives a code you can paste into another browser to move your stars and settings.
+One HTML file, no build step. No cookies and nothing personal is collected: the live site sends anonymous play
+counts (shift started, won or lost) and any feedback you choose to send to GoatCounter. Progress is kept only in your browser: a shift in progress is saved every few seconds and can be resumed after a reload, and **Menu → Copy my progress** gives a code you can paste into another browser to move your stars, settings, skills, best scores and on-call streak.
