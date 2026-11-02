@@ -2025,6 +2025,9 @@ function openSheet(html, onClose) {
   $("#sheetX").hidden = !sheetClose;
   $("#ov").hidden = false;
   $("#ov .sheet").scrollTop = 0;
+  // keyboard: focus the main button (or the first choice) so Enter answers; focus returns to the page on close
+  const first = $("#sheet .btn.go") || $("#sheet .choice") || $("#sheet button");
+  if (first) setTimeout(() => { try { first.focus({ preventScroll: true }); } catch {} }, 0);
 }
 function closeSheet() { $("#ov").hidden = true; sheetClose = null; boardSeen = true; measure(); }
 $("#sheetX").onclick = () => sheetClose && sheetClose();
