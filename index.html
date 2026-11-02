@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Load Rush: a real-time DevOps game. Drag load balancers, caches, queues and more onto a live system and keep it up.">
 <style>[hidden]{display:none!important} body{margin:0}</style>
+<script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
 <body>
 <title>Load Rush</title>
@@ -200,6 +201,11 @@ details.more[open] > summary { margin-bottom: 8px; }
 .sheet .kick.teach { color: var(--warn); }
 .sheet ul { padding-left: 18px; margin: 8px 0; } .sheet li { margin: 4px 0; max-width: 66ch; }
 .sheet .acts { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; align-items: center; }
+.fb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line, #333); }
+.fb .fb-q { font-size: 13px; color: var(--ink-dim); margin-right: 4px; }
+.fb .fb-off { background: transparent; border-color: transparent; color: var(--ink-faint); font-size: 12px; }
+.fb textarea { flex: 1 1 100%; min-height: 44px; font: inherit; font-size: 13px; padding: 8px; border-radius: 6px; background: var(--panel-2, #222); color: var(--ink); border: 1px solid var(--line-2, #444); resize: vertical; }
+.fb .fb-row { display: flex; gap: 8px; }
 .sheet .btn { padding: 10px 18px; font-size: 14px; }
 .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-top: 10px; }
 .lv { text-align: left; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 10px; padding: 11px 13px; display: flex; flex-direction: column; gap: 3px; }
@@ -648,6 +654,30 @@ const PROBLEMS = [
 const problem = key => PROBLEMS.find(p => p.key === key);
 
 /* ================================================================== state */
+/* Anonymous play counts and feedback for GoatCounter (no cookies, no names); only on the live site. */
+function track(path, title) {
+  try { if (location.hostname === "tiwari91.github.io" && window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: "load-rush-" + path, title: title || path, event: true }); } catch { /* never breaks the game */ }
+}
+/* "How was that shift?": after the first shift and then every fourth; "Don't ask again" means never. */
+function feedbackBox(level) {
+  const n = (store.get("loadrush-fb-n", 0) || 0) + 1; store.set("loadrush-fb-n", n);
+  if (store.get("loadrush-fb-off", false) || !(n === 1 || n % 4 === 0)) return "";
+  setTimeout(() => {
+    const box = $("#fbBox"); if (!box) return;
+    const done = msg => { box.innerHTML = `<span class="fb-q">${msg}</span>`; };
+    const pick = verdict => {
+      track(`feedback-${verdict}`, level);
+      box.innerHTML = `<textarea id="fbText" rows="2" maxlength="300" aria-label="What would make it better?" placeholder="${verdict === "good" ? "What did you like? (optional)" : "What went wrong, or what would make it better? (optional)"}"></textarea>
+        <div class="fb-row"><button class="btn go" id="fbSend">Send</button><button class="btn" id="fbSkip">Skip</button></div>`;
+      $("#fbText").focus();
+      $("#fbSend").onclick = () => { const t = $("#fbText").value.replace(/\s+/g, " ").trim().slice(0, 300); if (t) track(`feedback-note-${verdict}: ${t}`, t); done("Thanks, that helps."); };
+      $("#fbSkip").onclick = () => done("Thanks.");
+    };
+    $("#fbGood").onclick = () => pick("good"); $("#fbBad").onclick = () => pick("bad");
+    $("#fbOff").onclick = () => { store.set("loadrush-fb-off", true); done("Okay, we won't ask again."); };
+  }, 0);
+  return `<div class="fb" id="fbBox"><span class="fb-q">How was that shift?</span><button class="btn" id="fbGood">Good</button><button class="btn" id="fbBad">Not great</button><button class="btn fb-off" id="fbOff">Don't ask again</button></div>`;
+}
 const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 let stars = store.get("loadrush-stars", {});
@@ -1434,6 +1464,7 @@ function load(level) {
 }
 function setRunning(on) {
   if (!S || S.over) return;
+  if (on && S.t < 0.01) track("shift-start", L.name);
   S.running = on;
   setTimeout(tourCheck, 0);
   $("#play").textContent = on ? "❚❚ Pause" : (S.t > 0.01 ? "▶ Resume" : "▶ Start shift");
@@ -1474,7 +1505,9 @@ function end(win) {
       ${win && next ? `<button class="btn go" id="bNext">Next shift: ${next.name}</button>` : ""}
       <button class="btn ${win && next ? "" : "go"}" id="bRetry">Try again</button>
       <button class="btn" id="bMenu">All shifts</button>
-    </div>`, closeSheet);
+    </div>
+    ${L.sandbox ? "" : feedbackBox(L.name)}`, closeSheet);
+  track(win ? "shift-won" : "shift-lost", `${L.name}${worst && !win ? ": " + worst.name : ""}`);
   if ($("#bNext")) $("#bNext").onclick = () => load(next);
   $("#bRetry").onclick = () => load(L);
   $("#bMenu").onclick = showMenu;
@@ -1533,6 +1566,8 @@ function showMenu() {
     load(b.dataset.i === "sandbox" ? SANDBOX : LEVELS[+b.dataset.i]);
   };
 }
+
+window.addEventListener("pagehide", () => { if (S && !S.over && S.t > 1) track("left-mid-shift", `${L.name}, ${Math.round(S.t)}s in`); });
 
 /* ================================================================== drag and drop (mouse, pen, touch) */
 let drag = null;
