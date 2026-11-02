@@ -836,6 +836,10 @@ const PROBLEMS = [
     teach: { deeper: "Spare capacity in every zone costs money every hour. Decide per service how much failure it must survive.", title: "A whole zone went dark", diagram: [["Load balancer", ""], ["Zone A servers", "gone", "down"], ["Zone B servers", "carrying everything", "hot"]],
     explain: "Zones are separate buildings with separate power. When one fails, every server in it disappears together. Whatever is left in zone B must carry all the traffic.",
     q: "What protects you next time?", options: [["Enough spare servers in both zones", true, "Yes. Plan so one zone alone can carry peak traffic (N+1). An autoscaler helps replace lost servers."], ["All servers in one zone", false, "Then one power cut takes down everything."], ["A CDN", false, "A CDN helps static files, not your app servers."]] } },
+  { key: "payfast", name: "Payments failing fast",
+    when: (m, apps, r) => m.payFailed > 0,
+    text: (m, apps, r) => `The breaker keeps your servers free, but ${Math.round(m.payFailed)} payments a second now fail straight away. Those orders are lost.`,
+    fix: "Add a <b>Queue</b> and a <b>Worker</b>: payments wait in the queue and are retried when the partner recovers." },
   { key: "partner", name: "Slow payment partner",
     when: (m, apps, r) => m.payStuck > 0,
     text: (m, apps, r) => `Payment calls take 8 seconds and hold your servers while they wait. p95 is ${Math.round(m.p95)} ms.`,
@@ -979,6 +983,7 @@ function fire(kind, text) {
     S.partnerSlow = PARTNER_TIME; log("page", text || "The payment provider now takes 8 seconds to answer.");
   } else log(kind, text);
 }
+function releaseCleared() { if (S && S.rescued) { delete S.rescued.deploy; delete S.rescued.leak; } }
 function rollback() {
   const r = S && S.release;
   if (!r || r.rollbackLeft > 0 || r.canaryLeft > 0 || S.over) return;
@@ -1006,8 +1011,8 @@ function tickIncidents(dt) {
       log("page", `OOMKilled: ${victims.length} app server${victims.length === 1 ? "" : "s"} ran out of memory and restarted.`); renderBoard();
     }
   }
-  if (r.canaryLeft > 0) { r.canaryLeft -= dt; if (r.canaryLeft <= 0) { S.release = null; log("good", "Canary checks failed, so it rolled back by itself. Only about 10% of users saw the bad version."); updateRollback(); renderBoard(); } }
-  else if (r.rollbackLeft > 0) { r.rollbackLeft -= dt; if (r.rollbackLeft <= 0) { S.release = null; log("good", "Rollback finished. Every server runs the old version again."); updateRollback(); renderBoard(); } }
+  if (r.canaryLeft > 0) { r.canaryLeft -= dt; if (r.canaryLeft <= 0) { S.release = null; releaseCleared(); log("good", "Canary checks failed, so it rolled back by itself. Only about 10% of users saw the bad version."); updateRollback(); renderBoard(); } }
+  else if (r.rollbackLeft > 0) { r.rollbackLeft -= dt; if (r.rollbackLeft <= 0) { S.release = null; releaseCleared(); log("good", "Rollback finished. Every server runs the old version again."); updateRollback(); renderBoard(); } }
 }
 
 /* ================================================================== simulation */
@@ -1168,6 +1173,13 @@ function coach(dt) {
     const handling = (key === "dbdown" && S.failoverTo) || ((key === "deploy" || key === "leak") && S.release && S.release.rollbackLeft > 0);
     const lvl = S.budget < 25 || fast ? 2 : S.budget < 60 ? 1 : 0;
     if (lvl && !handling && (S.rescued[key] || 0) < lvl) { S.rescued[key] = lvl; rescue(key, lvl); }
+  }
+  // a problem that went away for 8 seconds and comes back is a new one, and gets help again
+  if (!S.gone) S.gone = {};
+  const active = new Set(S.problems.map(p => p[0]));
+  for (const k of Object.keys(S.rescued)) {
+    S.gone[k] = active.has(k) ? 0 : (S.gone[k] || 0) + dt;
+    if (S.gone[k] > 8) { delete S.rescued[k]; delete S.gone[k]; }
   }
 }
 
@@ -1568,14 +1580,23 @@ function rescue(key, lvl) {
     // Add enough to fix it, not just one: for servers and workers, as many as the load needs (to about 80% busy),
     // inside the spend limit. An autoscaler on offer goes in too, so it keeps up from here.
     let want = 1;
-    if (t === "app" && S.m) want = Math.max(1, Math.ceil(count("app") * S.m.uA / 0.8) - count("app"));
+    if (t === "app" && S.m) want = Math.max(1, Math.ceil(count("app") * S.m.uA / 0.65) - count("app"));   // leave some room: traffic often keeps climbing
     if (t === "worker") want = Math.max(1, Math.min(3, Math.ceil(S.backlog / 1500)));
     let added = 0;
     S.helped[key] = "do";
+    // more servers are useless without something to share visitors between them: the load balancer goes in first
+    if (t === "app" && L.tray.includes("lb") && !count("lb") && place("lb", "entry") !== false) { S.helped.nolb = "do"; S.rescued.nolb = 2; log("coach", "Added a Load balancer first: without one, only the first app server gets any visitors."); }
     S.rescued[key] = 2;   // already fixed: no second pause for this while the new parts start up
     for (let k = 0; k < want && place(t, part.zone) !== false; k++) added++;
     const extra = t === "app" && L.tray.includes("auto") && !count("auto") && place("auto", "app") !== false;
     const cached = addCache && place("cache", "cache") !== false;
+    // servers need something to share the visitors between them; a breaker alone loses the payments it cuts off
+
+    if (t === "queue" && L.tray.includes("worker") && !count("worker") && place("worker", "jobs") !== false) log("coach", "Added a Worker too: a queue does nothing until something takes jobs out of it.");
+    if (t === "breaker" && L.tray.includes("queue") && !count("queue")) {
+      const q = place("queue", "jobs") !== false, w = q && L.tray.includes("worker") && !count("worker") && place("worker", "jobs") !== false;
+      if (q) { S.helped.payfast = "do"; log("coach", `Added a Queue${w ? " and a Worker" : ""} too: payments that the breaker cuts off now wait and are retried, instead of being lost.`); }
+    }
     if (cached) S.helped.dbhot = "do";
     if (extra) S.helped.auto = "do";
     if (cached) { S.rescued.dbhot = 2; log("coach", "Added a Cache too: it remembers common answers, so the database is not asked the same thing again and again."); }
