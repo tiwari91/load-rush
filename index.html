@@ -587,7 +587,7 @@ const LEVELS = [
     task: "Be ready before it happens.",
     given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "standby"], fresh: ["standby"],
     traffic: t => T({ legit: ramp(t, 0, 60, 260, 320), readFrac: 0.8 }),
-    events: [{ t: 8, kind: "info", text: "Disk warnings on the primary database host again." }, { t: 40, kind: "db-fail", text: "The primary database host died." }],
+    events: [{ t: 8, kind: "info", text: "Disk warnings on the primary database host again.", prep: ["standby"], keys: ["dbdown"] }, { t: 40, kind: "db-fail", text: "The primary database host died." }],
     learned: ["A standby copy in another zone turns a long outage into a few seconds of failover.",
               "Read replicas keep reads working, but writes need a primary. Replicas are not a backup plan for writes.",
               "Backups are for lost data; standbys are for lost machines. You want both.",
@@ -599,7 +599,7 @@ const LEVELS = [
     task: "Survive losing a whole zone for 40 seconds.",
     given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica"], fresh: [],
     traffic: t => T({ legit: ramp(t, 0, 30, 380, 450) }),
-    events: [{ t: 20, kind: "info", text: "AWS status page: increased error rates in zone A." }, { t: 40, kind: "az-fail", text: "Zone A is down." }],
+    events: [{ t: 20, kind: "info", text: "AWS status page: increased error rates in zone A.", prep: ["app"], spare: 2, keys: ["azdown"] }, { t: 40, kind: "az-fail", text: "Zone A is down." }],
     learned: ["Spread servers across zones, and keep enough spare capacity that one zone can carry everything (N+1).",
               "An autoscaler replaces lost servers, but only after they are gone and the new ones have booted.",
               "Hands-on: build a VPC with subnets in two zones and spread an Auto Scaling group across both."] },
@@ -767,7 +767,7 @@ function makeOnCall(day, practiceSeed) {
   };
   const events = [];
   for (const x of incidents) {
-    if (x.told) events.push({ t: Math.max(2, x.at - 18), kind: "info", text: "Reminder: " + x.forecast(x.at) });
+    if (x.told) events.push({ t: Math.max(2, x.at - 18), kind: "info", text: "Reminder: " + x.forecast(x.at), prep: x.parts.filter(t => t !== "replica"), spare: x.spare, keys: x.keys });
     events.push({ t: x.at, kind: x.event || "page", text: x.told ? x.page : x.surprise });
   }
   const dKey = pick(Object.keys(DECISIONS)), dAt = Math.round((incidents[0].at + incidents[1].at) / 2);
@@ -1021,7 +1021,7 @@ function step(dt) {
   const tr = L.traffic(S.t);
   for (const x of S.extra || []) tr.legit += wave(S.t, x.t0, x.t1, x.legit, 5);   // traffic a decision added
   for (const p of S.pieces) if (p.bootLeft > 0) { p.bootLeft = Math.max(0, p.bootLeft - dt); if (p.bootLeft === 0 && typeof sndPing === "function") sndPing(); }
-  L.events.forEach((e, i) => { if (!S.fired[i] && S.t >= e.t) { S.fired[i] = true; fire(e.kind, e.text); } });
+  L.events.forEach((e, i) => { if (!S.fired[i] && S.t >= e.t) { S.fired[i] = true; fire(e.kind, e.text); if (e.prep && typeof headsUp === "function") headsUp(e); } });
   tickIncidents(dt);
 
   const lb = has("lb"), nApp = ready("app").length, cdn = has("cdn"), waf = has("waf"), cache = has("cache");
@@ -1455,6 +1455,35 @@ function incidentReport(S, oc) {
     html: `<div class="label" style="margin-top:14px">Incident report <small>(what happened, and what to remember)</small></div><ol class="pms">${rows.join("")}</ol>` };
 }
 
+/* ---- a heads-up: a warning is a chance to prepare (only when the part is not there yet) ---- */
+function headsUp(ev) {
+  if (!rescueOn || L.sandbox || S.over || !document.getElementById("ov").hidden) return;
+  const need = ev.prep.filter(t => L.tray.includes(t) && (ev.spare ? true : !count(t)) && PARTS[t]);
+  if (!need.length) return;
+  const cost = need.reduce((a, t) => a + PARTS[t].cost * (ev.spare && t === "app" ? ev.spare : 1), 0), fits = spendRate() + cost <= L.cap;
+  const names = need.map(t => `<b>${ev.spare && t === "app" ? ev.spare + " spare " + PARTS[t].name + "s" : PARTS[t].name}</b> ($${PARTS[t].cost}/h, ready in ${PARTS[t].boot}s)`).join(" and ");
+  const was = S.running; setRunning(false);
+  if (typeof sndChime === "function") sndChime();
+  mark("Heads-up", "incident");
+  openSheet(`
+    <div class="kick teach">Heads-up · the game is paused</div>
+    <h2>A warning is a chance to prepare</h2>
+    <p><b>The warning:</b> ${ev.text.replace(/^Reminder: /, "")}</p>
+    <p><b>What a good engineer does now:</b> add ${names}. Parts take seconds to start, so adding them after the trouble starts is often too late.</p>
+    ${fits ? "" : `<p><b>Your spend limit:</b> this needs $${cost} an hour more than you have left. Remove a part that is mostly idle first.</p>`}
+    <div class="acts">${fits ? `<button class="btn go" id="hDo">Do it for me</button>` : ""}<button class="btn ${fits ? "" : "go"}" id="hSelf">I'll do it myself</button><button class="btn" id="hSkip">Not now</button></div>
+    <p class="real">Preparing yourself counts for more points and skills than letting the game do it.</p>`, () => back());
+  function back() { closeSheet(); if (was) setRunning(true); }
+  $("#hSelf").onclick = () => { S.prepHint = need[0]; showSuggestion(); back(); };
+  $("#hSkip").onclick = back;
+  if (fits) $("#hDo").onclick = () => {
+    for (const t of need) for (let k = 0; k < (ev.spare && t === "app" ? ev.spare : 1); k++) place(t, PARTS[t].zone);
+    for (const k of ev.keys || []) S.helped[k] = "do";
+    log("coach", `Prepared for you: ${need.map(t => PARTS[t].name).join(", ")}. Next time, read the warning and add it yourself.`);
+    back();
+  };
+}
+
 /* ---- a decision mid-shift: the game pauses, you choose, it carries on ---- */
 function askChoice(key) {
   const d = DECISIONS[key]; if (!d || S.over) return;
@@ -1529,6 +1558,8 @@ function fixParts(html) {
 }
 /* The first suggested part you can use right now (in this shift's tray, under its maximum). */
 function suggestedPart() {
+  if (S && !S.over && S.prepHint && L.tray.includes(S.prepHint) && !count(S.prepHint)) return S.prepHint;
+  if (S && S.prepHint && count(S.prepHint)) S.prepHint = null;
   if (!S || S.over || !S.problems || !S.problems.length) return null;
   const key = S.problems[0][0];
   if (role !== "mid" && !(S.hintKeys && S.hintKeys[key])) return null;   // Staff and Principal work it out first
