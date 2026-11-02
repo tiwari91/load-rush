@@ -27,6 +27,9 @@ There is also a Sandbox with traffic sliders and buttons to break things on purp
 
 - **Teach mode** pauses the game when something goes wrong, shows a small diagram, and asks what you would do.
 - **Who is playing:** Mid-level gets hints; Staff and Principal get fewer hints and discussion questions after each shift.
+- **After each shift:** a chart of site health with what happened and what you did, plus the problem that hurt most and its fix.
+- **Words:** a plain glossary of every term in the game.
+- **Presenter mode:** bigger text for a projector or screen share.
 - **Inspector:** click any column or chart to see the numbers behind it.
 
 The numbers are a simple model chosen to teach the ideas, not a benchmark of any real product.

@@ -248,6 +248,21 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .tour .tacts { display: flex; gap: 8px; align-items: center; }
 .tour .tacts .skip { margin-left: auto; background: none; border: 0; color: var(--ink-dim); text-decoration: underline; font-size: 12.5px; }
 .tour .twait { font-size: 12.5px; color: var(--warn); }
+.worst { margin: 12px 0 4px; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); border-left: 4px solid var(--warn); max-width: 70ch; }
+.worst.lost { border-left-color: var(--bad); }
+.worst b { color: var(--ink); } .worst .wfix { margin-top: 4px; color: var(--ink-dim); }
+.worst .wfix b { color: var(--signal); }
+.stats small + b + small, .stats b + small { display: block; font: 10.5px var(--mono); color: var(--ink-faint); text-transform: none; letter-spacing: 0; }
+.tlgrid { stroke: var(--line); stroke-width: 1; } .tlax { fill: var(--ink-faint); font: 10px var(--mono); }
+.tlline { fill: none; stroke: var(--ok); stroke-width: 2.2; } .tlbad { fill: var(--bad); }
+.tlm { stroke-width: 1; stroke-dasharray: 3 3; } .tlm.incident { stroke: var(--bad); } .tlm.fix { stroke: var(--ok); } .tlm.part { stroke: var(--signal); }
+.tlt { font: 10.5px var(--body); } .tlt.incident { fill: var(--bad); } .tlt.fix { fill: var(--ok); } .tlt.part { fill: var(--signal); }
+.hintbtn { margin-left: 8px; font-size: 12px; padding: 4px 10px; }
+.words { display: grid; grid-template-columns: minmax(130px, 200px) 1fr; gap: 6px 16px; margin: 10px 0; }
+.words dt { font-weight: 600; color: var(--signal); } .words dd { margin: 0; color: var(--ink); }
+@media (max-width: 600px) { .words { grid-template-columns: 1fr; } .words dd { margin-bottom: 8px; } }
+body.present .stage, body.present header { zoom: 1.18; }
+body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -256,11 +271,12 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
   <div class="lvname" id="lvname">Choose a shift</div>
   <div class="hstats">
     <div class="hstat"><small>Time</small><span id="clock">0:00 / 0:00</span></div>
-    <div class="hstat"><small>Cost</small><span id="spend">$0 / $0 an hour</span></div>
+    <div class="hstat"><small id="spendLbl">Cost</small><span id="spend">$0 / $0 an hour</span></div>
     <div class="ctrl">
       <button class="btn danger" id="rollback" hidden>Roll back release</button>
       <button class="btn go big" id="play">▶ Start shift</button>
       <button class="btn" id="speed" title="Game speed">1×</button>
+      <button class="btn" id="words" title="What the words mean">Words</button>
       <button class="btn" id="menu">Menu</button>
     </div>
   </div>
@@ -517,95 +533,95 @@ let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, hea
 /* Every problem the game can detect, in priority order. Each one has, in one place:
    when (is it happening), text (what the pager says), fix (the Mid-level hint), teach (the Teach mode card). */
 const PROBLEMS = [
-  { key: "nolb",
+  { key: "nolb", name: "Only one server was used",
     when: (m, apps, r) => apps >= 2 && !m.lb,
     text: (m, apps, r) => `You have ${apps} app servers, but only one is getting requests. Something has to spread the requests across them.`,
     fix: "Drag a <b>Load balancer</b> into the Entry column.",
     teach: { deeper: "Load balancers also check server health and stop sending requests to sick servers. That is what makes a crash survivable.", title: "Two servers, one doing all the work", diagram: [["Users", ""], ["App server 1", "100% busy", "hot"], ["App server 2", "idle", "down"]],
     explain: "Users connect to one address. Without something in front that shares out the requests, they all land on the first server. The second one sits idle while the first one drowns.",
     q: "What spreads requests across servers?", options: [["Load balancer", true, "Yes. A load balancer sits in the Entry column and sends each request to the least busy healthy server."], ["Cache", false, "A cache saves database reads. It does not decide which server gets a request."], ["More app servers", false, "More servers still get nothing without a load balancer in front."]] } },
-  { key: "bots",
+  { key: "bots", name: "Bot flood",
     when: (m, apps, r) => m.bots > 300 && !m.waf,
     text: (m, apps, r) => `${Math.round(m.bots)} requests a second come from a few IP addresses. These are not customers.`,
     fix: "Drag a <b>Rate limiter</b> into the Edge column.",
     teach: { deeper: "Limit by more than IP address: API key, user, or behaviour. Many real users can share one address.", title: "This traffic is not customers", diagram: [["Bots", "2000/s", "hot"], ["Edge", "no filter"], ["App servers", "drowning", "hot"]],
     explain: "Requests jumped 8× but sign-ups did not move, and most requests come from a few dozen IP addresses. That is a bot or a scraper, not a crowd.",
     q: "What is the cheapest fix?", options: [["Rate limiter at the edge", true, "Yes. It blocks clients that send far too many requests, before they reach your servers, for about $1 an hour."], ["Many more app servers", false, "You would pay to serve bots, and they can always send more."], ["A CDN", false, "A CDN serves static files. Bots hit your dynamic pages, so they still get through."]] } },
-  { key: "deploy",
+  { key: "deploy", name: "Bad release",
     when: (m, apps, r) => r && r.kind === "bug" && r.share >= 1 && !r.rollbackLeft,
     text: (m, apps, r) => "Errors jumped the moment the new version went out. Nothing else changed.",
     fix: "Press the red <b>Roll back release</b> button at the top. Next time, add <b>Canary deploys</b> first.",
     teach: { deeper: "Roll back first, find the cause second. Database changes need two steps (add the new, then remove the old) so the old version keeps working.", title: "Errors started with the release", diagram: [["Release v2.5", "just went out", "hot"], ["All app servers", "9% of requests fail", "hot"], ["Users", "see errors", "hot"]],
     explain: "Nothing else changed: traffic is normal, servers are not busy. Errors jumped the second the new version went out. The change is the most likely cause.",
     q: "What do you do first?", options: [["Roll back the release", true, "Yes. Restore service first, debug later. Next time, a canary would limit the damage to 10% of users."], ["Add more app servers", false, "More servers run the same broken code. Errors stay the same."], ["Restart the database", false, "The database is fine. Changing healthy parts during an incident makes things worse."]] } },
-  { key: "leak",
+  { key: "leak", name: "Memory leak",
     when: (m, apps, r) => r && r.kind === "leak" && r.share >= 1 && !r.rollbackLeft && r.age > 8,
     text: (m, apps, r) => `App servers have lost ${Math.round((1 - m.health) * 100)}% of their speed since the release, and it keeps falling.`,
     fix: "Press the red <b>Roll back release</b> button at the top.",
     teach: { deeper: "Alert on the trend, such as memory climbing after a release, not only on crashes.", title: "Capacity falls a little every second", diagram: [["Release v3.0", "", "hot"], ["App servers", "memory grows", "hot"], ["OOMKilled", "restart", "down"]],
     explain: "Since version 3.0, every server gets slower as its memory fills. When memory runs out, the system kills the server and it restarts, clean, and the cycle starts again.",
     q: "What fixes the cause?", options: [["Roll back to the old version", true, "Yes. The leak is in the new code. Roll back now, then find the leak with a memory profile."], ["Add more servers", false, "More leaking servers. They all fill up and get killed too."], ["Restart servers on a timer", false, "That hides the leak and causes regular blips. It is a plaster, not a fix."]] } },
-  { key: "dbdown",
+  { key: "dbdown", name: "Database down",
     when: (m, apps, r) => !m.dbUp,
     text: (m, apps, r) => "The primary database is down. Every write fails until it is back.",
     fix: "Nothing to do but wait now. Next time, add a <b>Standby DB</b> before it happens.",
     teach: { deeper: "A failover is only as good as your last test of it. Practise it, and make sure the app reconnects quickly.", title: "The primary database is gone", diagram: [["App servers", ""], ["Primary DB", "dead", "down"], ["Standby", "none", "down"]],
     explain: "Every write (orders, sign-ups, carts) needs the primary. Replicas and the cache can still answer some reads, but nothing can be saved until a primary is back.",
     q: "What would have made this a short blip?", options: [["A standby database ready to take over", true, "Yes. A standby in another zone is promoted in seconds. In AWS this is RDS Multi-AZ."], ["More read replicas", false, "Replicas answer reads, but writes still need a primary."], ["A bigger cache", false, "A cache cannot save new orders."]] } },
-  { key: "azdown",
+  { key: "azdown", name: "Zone outage",
     when: (m, apps, r) => S.azDown > 0 && m.uA > 0.9,
     text: (m, apps, r) => "Zone A is down and zone B cannot carry all the traffic.",
     fix: "Add <b>App servers</b>. New ones go to zone B.",
     teach: { deeper: "Spare capacity in every zone costs money every hour. Decide per service how much failure it must survive.", title: "A whole zone went dark", diagram: [["Load balancer", ""], ["Zone A servers", "gone", "down"], ["Zone B servers", "carrying everything", "hot"]],
     explain: "Zones are separate buildings with separate power. When one fails, every server in it disappears together. Whatever is left in zone B must carry all the traffic.",
     q: "What protects you next time?", options: [["Enough spare servers in both zones", true, "Yes. Plan so one zone alone can carry peak traffic (N+1). An autoscaler helps replace lost servers."], ["All servers in one zone", false, "Then one power cut takes down everything."], ["A CDN", false, "A CDN helps static files, not your app servers."]] } },
-  { key: "partner",
+  { key: "partner", name: "Slow payment partner",
     when: (m, apps, r) => m.payStuck > 0,
     text: (m, apps, r) => `Payment calls take 8 seconds and hold your servers while they wait. p95 is ${Math.round(m.p95)} ms.`,
     fix: "Add <b>Timeouts + breaker</b> to the App servers column. A <b>Queue</b> and a <b>Worker</b> help even more.",
     teach: { deeper: "Timeouts, retries that wait longer each time, and a fallback. Retrying too fast can knock a struggling partner over.", title: "Your servers are waiting on someone else", diagram: [["App servers", "stuck waiting", "hot"], ["Payment API", "8 s per call", "down"]],
     explain: "Each payment call holds a server busy until the partner answers. At 8 seconds each, a few calls a second fill every server, and normal pages fail too.",
     q: "How do you stop their outage becoming yours?", options: [["Timeouts + circuit breaker (and a queue)", true, "Yes. Give up after 1 second, stop calling for a while, and queue payments to retry later."], ["Add many more app servers", false, "They also fill up with waiting calls. You cannot out-buy a slow dependency."], ["A CDN", false, "Payment calls are dynamic. A CDN cannot help."]] } },
-  { key: "static",
+  { key: "static", name: "App servers serving images",
     when: (m, apps, r) => m.tr.staticFrac >= 0.3 && !m.cdn && S.t > 8,
     text: (m, apps, r) => `${Math.round(m.tr.staticFrac * 100)}% of requests are images, CSS and JS. Your app does not need to serve those.`,
     fix: "Drag a <b>CDN</b> into the Edge column.",
     teach: { deeper: "Put a version or hash in file names, so files can be cached for a year and a release still shows up at once.", title: "Your app is serving pictures", diagram: [["Users", ""], ["Edge", "no CDN"], ["App servers", "busy with images", "hot"]],
     explain: "A big share of requests are images, CSS and JavaScript. Those files never change between users, yet each one travels all the way to your app servers.",
     q: "Where should static files be served from?", options: [["A CDN at the edge", true, "Yes. A CDN keeps copies close to users. Your app never sees those requests and pages load faster."], ["The database", false, "Databases are for data, and they are your most expensive part to scale."], ["A queue", false, "Queues are for work that can wait. Images are needed now."]] } },
-  { key: "heavy",
+  { key: "heavy", name: "Slow work during checkout",
     when: (m, apps, r) => m.tr.heavyFrac > 0 && !m.queue && S.t > 6,
     text: (m, apps, r) => `Checkout makes the user wait for emails and image resizing. p95 is ${Math.round(m.p95)} ms.`,
     fix: "Add a <b>Queue</b> and some <b>Workers</b> to Background jobs.",
     teach: { deeper: "Queued jobs can run twice. Make them safe to repeat, and send jobs that keep failing to a separate queue for review.", title: "Users wait for work they do not need", diagram: [["Checkout", ""], ["App server", "sends email, resizes photos", "hot"], ["User", "waits ~1 s", "hot"]],
     explain: "Checkout sends an email and resizes photos before it answers. The user does not need any of that to see 'order placed', but they wait for all of it, and it keeps servers busy.",
     q: "How do you make checkout fast again?", options: [["Queue + workers", true, "Yes. Put the slow jobs in a queue, answer the user at once, and let workers do the jobs in the background."], ["Faster app servers", false, "The work is still in the request. Users still wait."], ["A cache", false, "Each checkout is different. There is nothing to reuse."]] } },
-  { key: "qnow",
+  { key: "qnow", name: "Queue with no workers",
     when: (m, apps, r) => m.queue && m.workers === 0 && S.backlog > 40,
     text: (m, apps, r) => `${Math.round(S.backlog)} jobs are waiting in the queue, and nothing is taking them out.`,
     fix: "Add <b>Workers</b> to Background jobs.",
     teach: { deeper: "Watch the age of the oldest job, not just the count. Add workers based on it.", title: "A queue with nobody reading it", diagram: [["App", ""], ["Queue", "jobs piling up", "hot"], ["Workers", "none", "down"]],
     explain: "The queue holds jobs until something takes them out. With no workers, emails never go out and the queue fills until it rejects new jobs.",
     q: "What is missing?", options: [["Workers", true, "Yes. Workers take jobs from the queue and run them. Add enough to keep up with how fast jobs arrive."], ["A second queue", false, "Two queues with no workers just fill up twice."], ["A load balancer", false, "Workers pull from the queue; they do not need a load balancer."]] } },
-  { key: "qbig",
+  { key: "qbig", name: "Workers falling behind",
     when: (m, apps, r) => m.queue && m.workers > 0 && S.backlog > 800,
     text: (m, apps, r) => `The queue backlog is ${Math.round(S.backlog)} jobs and growing. The workers cannot keep up.`,
     fix: "Add more <b>Workers</b>." },
-  { key: "dbhot",
+  { key: "dbhot", name: "Database overloaded",
     when: (m, apps, r) => m.dbUp && m.uD > 0.9,
     text: (m, apps, r) => `The database is at ${Math.round(m.uD * 100)}%. Most of its work is reads. What else can answer reads?`,
     fix: "Add a <b>Cache</b>, or <b>Read replicas</b> in the Database column.",
     teach: { deeper: "A cache brings a new problem: old data. Decide per kind of data how old a cached answer may be.", title: "The database is the bottleneck", diagram: [["App servers", ""], ["Primary DB", "over 90% busy", "hot"], ["Cache", "could help", "fix"]],
     explain: "Almost every page reads from the database. When thousands of people read the same product pages, the database answers the same question again and again.",
     q: "What takes repeated reads off the database?", options: [["A cache (or read replicas)", true, "Yes. A cache remembers answers to common reads. Replicas also share reads. Writes still go to the primary."], ["More app servers", false, "More app servers send even more queries to the database."], ["A rate limiter", false, "These are real customers. Blocking them is not a fix."]] } },
-  { key: "apphot",
+  { key: "apphot", name: "App servers overloaded",
     when: (m, apps, r) => m.uA > 0.92 && !r && S.azDown <= 0,
     text: (m, apps, r) => `App servers are at ${Math.round(m.uA * 100)}% load. They need help.`,
     fix: "Add <b>App servers</b>, or an <b>Autoscaler</b>.",
     teach: { deeper: "Scaling out only works if servers share nothing: no sessions in memory, no local files, no sticky routing.", title: "The app servers are full", diagram: [["Users", ""], ["Load balancer", ""], ["App servers", "over 90% busy", "hot"], ["Database", ""]],
     explain: "Each server can only answer so many requests a second. Near 100% busy, requests wait in line, so response time shoots up. Past 100%, requests start to fail.",
     q: "What is the quickest fix here?", options: [["Add app servers (or an autoscaler)", true, "Yes. App code that keeps no data can scale out: more copies, each taking a share."], ["Add a read replica", false, "Replicas help the database. The bottleneck right now is the app servers."], ["Remove the cache", false, "That would send more work to the database and make things worse."]] } },
-  { key: "autolb",
+  { key: "autolb", name: "Autoscaler with no load balancer",
     when: (m, apps, r) => has("auto") && !m.lb,
     text: (m, apps, r) => "The autoscaler is adding servers, but nothing sends them traffic.",
     fix: "Drag a <b>Load balancer</b> into the Entry column." },
@@ -626,8 +642,12 @@ function newState() {
   return { t: 0, pieces: [], nextId: 1, budget: 100, speed: 1, running: false, over: false, warm: 0, backlog: 0,
     autoTick: 0, hist: { rps: [], bots: [], p95: [], err: [] }, m: null, tipHeld: {}, tipsShown: {}, fired: {},
     peak: 0, worstP95: 0, failed: 0, total: 0, spendSec: 0,
-    release: null, dbDown: 0, failoverTo: null, azDown: 0, partnerSlow: 0, taught: {} };
+    release: null, dbDown: 0, failoverTo: null, azDown: 0, partnerSlow: 0, taught: {},
+    blame: {}, timeline: [], marks: [], tlSec: -1, hintUsed: false, hintKeys: {} };
 }
+/* A note on the end-of-shift timeline. kind: incident, fix or part. */
+function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
+const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow" };
 function addPiece(type, opts = {}) {
   const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
   if (type === "app") {
@@ -643,6 +663,8 @@ const spendRate = () => S.pieces.reduce((a, p) => a + PARTS[p.type].cost, 0);
 
 /* ================================================================== incidents */
 function fire(kind, text) {
+  const label = INCIDENT_NAMES[kind] || (kind === "page" && text ? text.split(".")[0] : null);
+  if (label) mark(label, "incident");
   if (kind === "crash") {
     const v = ready("app");
     if (v.length) killPiece(v[Math.floor(Math.random() * v.length)].id);
@@ -672,7 +694,7 @@ function fire(kind, text) {
 function rollback() {
   const r = S && S.release;
   if (!r || r.rollbackLeft > 0 || r.canaryLeft > 0 || S.over) return;
-  r.rollbackLeft = ROLLBACK_TIME; log("info", `Rolling back to the old version (about ${ROLLBACK_TIME}s).`); updateRollback();
+  r.rollbackLeft = ROLLBACK_TIME; mark("Rollback", "fix"); log("info", `Rolling back to the old version (about ${ROLLBACK_TIME}s).`); updateRollback();
 }
 function tickIncidents(dt) {
   if (S.dbDown > 0) {
@@ -778,13 +800,17 @@ function step(dt) {
 
   const burnErr = Math.max(0, err * 100 - 1) * 0.6, burnLat = p95 > 800 ? 1.5 + (p95 - 800) / 400 : 0;
   const burn = Math.min(10, burnErr + burnLat);
+  const healthBefore = S.budget;
   S.budget = Math.max(0, S.budget - burn * dt);
+  const drop = healthBefore - S.budget;
   if (L.sandbox && burn === 0) S.budget = Math.min(100, S.budget + 3 * dt);
 
   autoscale(dt, uA, nApp);
 
   S.peak = Math.max(S.peak, legit + bots); S.worstP95 = Math.max(S.worstP95, p95);
   S.failed += failedLegit * dt; S.total += legit * dt; S.spendSec += spendRate() * dt;
+  const sec = Math.floor(S.t + 1e-6);   // whole seconds: adding 0.1 ten times never quite reaches 1.0
+  if (sec !== S.tlSec) { S.tlSec = sec; S.timeline.push({ t: S.t, b: S.budget, bad: burn > 0 }); }
 
   const out = {
     blocked: bots - botsPass, cdn: cdnServed,
@@ -799,7 +825,7 @@ function step(dt) {
   S.m = { tr, legit, bots, botsPass, staticReq, dynLegit, cdnServed, staticToApp, heavy, pay, payStuck, payQueued, payFailed,
     lb, nApp, used, health, capA, appLoad, uA, fA, bugFail, cache, hit, readsAll, reads, writes, jobWrites, jobsIn, jobsDone,
     workers, queue, reps, repCap, readsOnRep, primLoad, uD, uR, dbUp, failApp, failDb, failBug, qFail, failedLegit, err,
-    appLat, dbLat, lat, p95, burnErr, burnLat, burn, out, cdn, waf, breaker };
+    appLat, dbLat, lat, p95, burnErr, burnLat, burn, drop, out, cdn, waf, breaker };
   coach(dt);
 
   if (!L.sandbox) {
@@ -815,7 +841,7 @@ function autoscale(dt, uA, nApp) {
   const desired = Math.min(PARTS.app.max, Math.ceil(Math.max(1, nApp) * Math.min(uA, 3) / 0.65));
   let added = 0;
   while (uA > 0.7 && count("app") < desired && spendRate() + PARTS.app.cost <= L.cap) { addPiece("app", { auto: true }); added++; }
-  if (added) { log("info", `Autoscaler added ${added} app server${added > 1 ? "s" : ""} (ready in 4s).`); renderBoard(); }
+  if (added) { mark(`Autoscaler +${added}`, "part"); log("info", `Autoscaler added ${added} app server${added > 1 ? "s" : ""} (ready in 4s).`); renderBoard(); }
   else if (uA > 0.7 && count("app") < desired && !S.tipsShown.autocap) { S.tipsShown.autocap = 1; log("coach", "The autoscaler wants more servers, but you are at your spend limit."); }
   else if (uA < 0.3 && count("app") > 2) {
     const v = S.pieces.find(p => p.type === "app" && p.auto);
@@ -828,6 +854,7 @@ function coach(dt) {
   const wait = teachOn ? 2 : ROLES[role].wait;
   const now = PROBLEMS.filter(p => p.when(m, apps, r));
   S.problems = now.filter(p => (S.tipHeld[p.key] || 0) > 1).map(p => [p.key, p.text(m, apps, r)]);
+  if (m.drop > 0) { const k = now.length ? now[0].key : "other"; S.blame[k] = (S.blame[k] || 0) + m.drop; }
   let toTeach = null;
   for (const p of PROBLEMS) {
     const on = now.includes(p);
@@ -847,13 +874,14 @@ function place(type, zone) {
   if (count(type) >= part.max) { toast(`You can have at most ${part.max} ${part.name.toLowerCase()}${part.max > 1 ? "s" : ""}.`); return false; }
   if (spendRate() + part.cost > L.cap) { toast(`Over budget: this would cost $${spendRate() + part.cost} an hour. Your limit is $${L.cap}. Remove something first.`); return false; }
   const p = addPiece(type);
+  mark("+ " + part.name, "part");
   log("info", `${part.name} added${p.az ? ` in zone ${p.az}` : ""}${p.bootLeft ? `, ready in ${part.boot}s` : ""}.`);
   if (type === "app" && count("app") >= 2 && !count("lb")) setTimeout(() => toast("Tip: with no load balancer, the new server will sit idle."), 300);
   renderBoard(); return true;
 }
 function removePiece(id) {
   const p = S.pieces.find(x => x.id === id); if (!p || p.fixed) return;
-  S.pieces = S.pieces.filter(x => x !== p); log("info", `${PARTS[p.type].name} removed.`); renderBoard();
+  S.pieces = S.pieces.filter(x => x !== p); mark("− " + PARTS[p.type].name, "part"); log("info", `${PARTS[p.type].name} removed.`); renderBoard();
 }
 
 /* ================================================================== inspector: the numbers behind each part */
@@ -905,7 +933,7 @@ function inspector(z, m) {
 }
 /* What the bar above the board says. Pure: depends only on the game state, the shift and the role. */
 function guideFor(S, L, role) {
-  let cls = "", icon = "▶", title = "What to do now", text = "";
+  let cls = "", icon = "▶", title = "What to do now", text = "", canHint = false, hintKey = null;
   const started = S.t > 0.05;
   if (S.over) { cls = S.budget > 0 ? "ok" : "bad"; icon = S.budget > 0 ? "✓" : "✕"; title = S.budget > 0 ? "Shift complete" : "The site went down"; text = "Open the Menu to try again or pick the next shift."; }
   else if (!S.running && !started) { title = "Get ready"; text = L.sandbox ? "Move the sliders on the left and watch what changes." : (role === "mid" ? (L.watch || L.task) : L.task) + (role === "mid" ? "" : " Then press ▶ Start shift."); }
@@ -915,10 +943,30 @@ function guideFor(S, L, role) {
     if (!prob) { cls = "ok"; icon = "✓"; title = "All good"; text = "Visitors are getting fast pages. Keep watching for changes."; }
     else {
       cls = S.budget < 40 ? "bad" : "warn"; icon = "!"; title = prob[1];
-      text = role === "mid" ? (problem(prob[0]) || {}).fix || "" : role === "staff" ? "What would you change? Click a column to see its numbers." : "Site health is dropping. Find out why.";
+      const showFix = role === "mid" || (S.hintKeys && S.hintKeys[prob[0]]);
+      text = showFix ? (problem(prob[0]) || {}).fix || "" : role === "staff" ? "What would you change? Click a column to see its numbers." : "Site health is dropping. Find out why.";
+      canHint = !showFix; hintKey = prob[0];
     }
   }
-  return { cls, icon, title, text, started };
+  return { cls, icon, title, text, started, canHint, hintKey };
+}
+/* Staff and Principal can ask for the fix. It limits the shift to 2 stars. */
+function useHint(key) { if (!S || !key) return; S.hintUsed = true; S.hintKeys[key] = 1; mark("Hint used", "fix"); }
+/* Hourly cost as a rough monthly figure (730 hours in a month). */
+const perMonth = perHour => (perHour * 730 / 1000).toFixed(1) + "k";
+/* Stars for a finished shift. Pure. */
+function starsFor(S, L, win) {
+  if (!win) return 0;
+  const avg = S.t ? S.spendSec / S.t : 0;
+  let st = 1; if (S.budget >= 40) st = 2; if (S.budget >= 70 && avg <= L.cap * 0.85) st = 3;
+  return S.hintUsed ? Math.min(st, 2) : st;
+}
+/* The problem that cost the most site health this shift. Pure. */
+function worstProblem(S) {
+  const top = Object.entries(S.blame).sort((a, b) => b[1] - a[1])[0];
+  if (!top || top[1] < 1) return null;
+  const p = problem(top[0]);
+  return { key: top[0], lost: top[1], name: p ? p.name : "Several small problems at once", fix: p ? p.fix : "Click the columns during the shift to see which one is full." };
 }
 /* Which columns the board shows for a shift: only the ones its parts can go in. Pure. */
 function zoneLayout(L, pieces) {
@@ -937,16 +985,18 @@ function zoneLayout(L, pieces) {
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
-let armed = null, inspected = "app", wantTour = false;
+let armed = null, inspected = "app", wantTour = false, presentOn = store.get("loadrush-present", false);
 const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let guideKey = "";
 function updateGuide() {
   if (!S || !L) return;
-  const { cls, icon, title, text, started } = guideFor(S, L, role);
-  const key = cls + title + text; if (key === guideKey) return; guideKey = key;
+  const { cls, icon, title, text, started, canHint, hintKey } = guideFor(S, L, role);
+  const key = cls + title + text + canHint; if (key === guideKey) return; guideKey = key;
   const g = $("#guide"); g.className = "guide " + cls;
-  $("#gicon").textContent = icon; $("#gtitle").textContent = title; $("#gtext").innerHTML = text;
+  $("#gicon").textContent = icon; $("#gtitle").textContent = title;
+  $("#gtext").innerHTML = text + (canHint ? ` <button class="btn hintbtn" id="hintBtn">Show hint (this shift then gets 2 stars at most)</button>` : "");
+  if (canHint) $("#hintBtn").onclick = () => { useHint(hintKey); guideKey = ""; updateGuide(); };
   const pz = $("#paused"); pz.hidden = S.running || S.over;
   $("#pausedText").textContent = started ? "Press ▶ Resume to carry on." : "Add parts if you want, then press ▶ Start shift.";
   $("#play").classList.toggle("ready", !S.running && !S.over);
@@ -1054,7 +1104,8 @@ function updateLive() {
 function updateHeader() {
   const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   $("#clock").textContent = L.sandbox ? `${fmt(S.t)} · no limit` : `${fmt(Math.min(S.t, L.duration))} / ${fmt(L.duration)}`;
-  const sp = spendRate(); $("#spend").textContent = `$${sp} / $${L.cap} an hour`; $("#spend").style.color = sp >= L.cap ? "var(--warn)" : "var(--ink)";
+  const sp = spendRate(); $("#spend").textContent = `$${sp} / $${L.cap} an hour`;
+  $("#spendLbl").textContent = `Cost · about $${perMonth(sp)} a month`; $("#spend").style.color = sp >= L.cap ? "var(--warn)" : "var(--ink)";
 }
 function updateRollback() {
   const r = S && S.release, b = $("#rollback");
@@ -1212,6 +1263,52 @@ function setTeach(on) {
 }
 
 
+
+/* End-of-shift chart: site health over time, with what happened and what you did. */
+function timelineSvg(S, L) {
+  const W = 720, H = 190, padL = 34, padR = 10, top = 62, bot = 20, dur = Math.max(S.t, 1);
+  const x = t => padL + (t / dur) * (W - padL - padR), y = b => top + (1 - b / 100) * (H - top - bot);
+  const tl = S.timeline;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Site health over the shift">`;
+  for (const v of [0, 50, 100]) s += `<line x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}" class="tlgrid"/><text x="${padL - 6}" y="${y(v) + 4}" text-anchor="end" class="tlax">${v}%</text>`;
+  tl.forEach((p, i) => { if (p.bad) { const nx = tl[i + 1] ? tl[i + 1].t : S.t; s += `<rect x="${x(p.t)}" y="${H - bot + 4}" width="${Math.max(1, x(nx) - x(p.t))}" height="5" class="tlbad"/>`; } });
+  s += `<polyline class="tlline" points="${tl.map(p => `${x(p.t).toFixed(1)},${y(p.b).toFixed(1)}`).join(" ")} ${x(S.t).toFixed(1)},${y(S.budget).toFixed(1)}"/>`;
+  const marks = S.marks.filter((m, i, a) => !(m.kind === "part" && a[i - 1] && a[i - 1].kind === "part" && m.t - a[i - 1].t < 1.5)).slice(0, 18);
+  marks.forEach((m, i) => {
+    const mx = x(m.t), row = i % 3;
+    s += `<line x1="${mx}" x2="${mx}" y1="${12 + row * 16}" y2="${H - bot}" class="tlm ${m.kind}"/><text x="${mx + 3}" y="${20 + row * 16}" class="tlt ${m.kind}">${m.label}</text>`;
+  });
+  return s + `<text x="${W - padR}" y="${H - 2}" text-anchor="end" class="tlax">red line under the chart = health was dropping</text></svg>`;
+}
+/* Plain meanings of the words used in the game. */
+const WORDS = [
+  ["Site health", "How much failure you can still afford this shift. It drops when pages fail or load slowly. Real teams call this an error budget, and the target behind it an SLO (service level objective)."],
+  ["Page speed (p95)", "95 of every 100 pages load faster than this number. The slowest 5 are what people remember."],
+  ["Visitors a second", "How many page requests arrive each second. Engineers say requests per second, or throughput."],
+  ["Load %", "How busy a part is: work coming in ÷ what it can handle. Above about 80%, everything waits longer; above 100%, requests fail."],
+  ["Headroom", "Spare capacity you keep so a spike or a lost server does not hurt."],
+  ["Scale out", "Add more copies of something (more servers). Scale up means a bigger machine instead."],
+  ["Static files", "Images, CSS and JavaScript. The same for every visitor, so they can be served from a CDN."],
+  ["Reads and writes", "Reading data (showing a product) versus saving it (placing an order). Many parts can help with reads; writes must go to the primary database."],
+  ["Release / deploy", "Putting a new version of your code on the servers."],
+  ["Rollback", "Putting the previous version back. Usually the fastest fix when a release breaks things."],
+  ["OOMKilled", "Out Of Memory: a program used more memory than allowed, so the system stopped it."],
+  ["Zone", "A separate data-centre building with its own power, inside one cloud region."],
+  ["Failover", "A standby copy taking over when the main one dies."],
+  ["Timeout", "How long to wait for another service before giving up."],
+  ["Circuit breaker", "After many failures, stop calling a service for a while and fail fast instead."],
+];
+function showWords() {
+  if (S) setRunning(false);
+  $("#sheet").innerHTML = `<div class="kick">Words</div><h2>What the words mean</h2>
+    <dl class="words">${WORDS.map(([w, d]) => `<dt>${w}</dt><dd>${d}</dd>`).join("")}
+    ${Object.values(PARTS).map(p => `<dt>${p.name}</dt><dd>${p.what} <span class="real">Real examples: ${p.real}.</span></dd>`).join("")}</dl>
+    <div class="acts"><button class="btn go" id="bCloseWords">Back to the game</button></div>`;
+  $("#ov").hidden = false;
+  $("#bCloseWords").onclick = () => { $("#ov").hidden = true; measure(); };
+}
+function setPresent(on) { presentOn = on; store.set("loadrush-present", on); document.body.classList.toggle("present", on); requestAnimationFrame(measure); }
+
 /* ================================================================== first-time tutorial (Launch Day) */
 const TOUR = [
   { at: '.zone[data-z="users"]', text: "Visitors arrive here. Each moving dot is one visitor asking for a page." },
@@ -1263,7 +1360,7 @@ function load(level) {
   endTour();
   setup(level);
   $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
-  if (teachOn) { S.speed = 0.5; $("#speed").textContent = "½×"; } else $("#speed").textContent = "1×";
+  if (teachOn || presentOn) { S.speed = 0.5; $("#speed").textContent = "½×"; } else $("#speed").textContent = "1×";
   if (L.sandbox) { log("info", "Sandbox: move the sliders, add parts, and break things with the buttons on the left."); $("#ov").hidden = true; setRunning(true); measure(); return; }
   log("info", L.task);
   showBrief();
@@ -1280,21 +1377,25 @@ function end(win) {
   S.over = true; S.running = false; updateRollback();
   $("#play").textContent = "Shift over"; $("#play").classList.remove("go"); updateGuide();
   const avgSpend = S.t ? S.spendSec / S.t : 0;
-  let st = 0;
-  if (win) { st = 1; if (S.budget >= 40) st = 2; if (S.budget >= 70 && avgSpend <= L.cap * 0.85) st = 3; }
+  const st = starsFor(S, L, win), worst = worstProblem(S);
   if (st > (stars[L.id] || 0)) { stars[L.id] = st; store.set("loadrush-stars", stars); }
   const next = LEVELS[LEVELS.indexOf(L) + 1];
   const errPct = S.total ? (100 * S.failed / S.total) : 0;
   $("#sheet").innerHTML = `
     <div class="kick">${win ? "Shift complete" : "Site down"}</div>
-    <h2>${win ? "You kept it up." : "The error budget ran out."}</h2>
-    ${win ? `<div class="stars" aria-label="${st} of 3 stars">${"★".repeat(st)}${"☆".repeat(3 - st)}</div>` : `<p>The site failed too many users for too long. Read the coach notes in the pager, or turn on Teach mode, change the setup, and try again.</p>`}
+    <h2>${win ? "You kept it up." : "Site health hit 0%."}</h2>
+    ${win ? `<div class="stars" aria-label="${st} of 3 stars">${"★".repeat(st)}${"☆".repeat(3 - st)}</div>` : ""}
+    ${worst ? `<div class="worst ${win ? "" : "lost"}"><div class="label">${win ? "What hurt most" : "Why you lost"}</div>
+      <b>${worst.name}</b> cost you <b>${Math.round(worst.lost)}%</b> of site health.<div class="wfix">Fix: ${worst.fix}</div></div>` : ""}
+    <div class="label" style="margin-top:12px">Your shift, second by second</div>
+    <div class="diagram">${timelineSvg(S, L)}</div>
+    ${S.hintUsed ? `<p class="real">You used a hint, so this shift can get 2 stars at most.</p>` : ""}
     <div class="stats">
-      <div><small>Budget left</small><b>${Math.ceil(S.budget)}%</b></div>
+      <div><small>Health left</small><b>${Math.ceil(S.budget)}%</b></div>
       <div><small>Peak traffic</small><b>${Math.round(S.peak)}/s</b></div>
-      <div><small>Worst p95</small><b>${Math.round(S.worstP95)} ms</b></div>
-      <div><small>Failed requests</small><b>${errPct.toFixed(2)}%</b></div>
-      <div><small>Average spend</small><b>$${avgSpend.toFixed(1)}/h</b></div>
+      <div><small>Slowest page speed</small><b>${Math.round(S.worstP95)} ms</b></div>
+      <div><small>Failed pages</small><b>${errPct.toFixed(2)}%</b></div>
+      <div><small>Average cost</small><b>$${avgSpend.toFixed(1)}/h</b><small>about $${perMonth(avgSpend)} a month</small></div>
     </div>
     ${win && st < 3 ? `<p class="real">3 stars: finish with 70%+ budget and average spend under $${Math.floor(L.cap * 0.85)}/h.</p>` : ""}
     <div class="label" style="margin-top:14px">What this shift teaches</div>
@@ -1329,7 +1430,7 @@ function showBrief() {
 }
 function showMenu() {
   if (S) setRunning(false);
-  const unlocked = i => i === 0 || (stars[LEVELS[i - 1].id] || 0) > 0;
+  const unlocked = i => i === 0 || (stars[LEVELS[i - 1].id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
   $("#sheet").innerHTML = `
     <div class="kick">Night shift, site reliability</div>
     <h2>Keep the site up while the traffic changes.</h2>
@@ -1342,6 +1443,7 @@ function showMenu() {
     <div class="label" style="margin-top:12px">Who is playing?</div>
     <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
     <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>(recommended the first time) half speed; pauses to explain each problem with a picture and a question</small></label>
+    <label class="switch" for="presentSw" style="margin-left:18px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Presenter mode <small>bigger text for a projector or screen share</small></label>
     <div class="levels">${LEVELS.map((lv, i) => `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
         <span class="n">SHIFT ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
@@ -1352,6 +1454,7 @@ function showMenu() {
     </div>`;
   $("#ov").hidden = false;
   $("#teachSw").onchange = e => setTeach(e.target.checked);
+  $("#presentSw").onchange = e => setPresent(e.target.checked);
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); showMenu(); };
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
@@ -1414,6 +1517,7 @@ $("#play").onclick = () => { if (S && !S.over) setRunning(!S.running); };
 $("#speed").onclick = () => { if (!S) return; S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 0.5 : 1; $("#speed").textContent = (S.speed === 0.5 ? "½" : S.speed) + "×"; };
 $("#rollback").onclick = rollback;
 $("#menu").onclick = showMenu;
+$("#words").onclick = showWords;
 document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
 addEventListener("resize", () => { measure(); if (tourStep >= 0) showTourStep(); });
 
@@ -1430,6 +1534,7 @@ function frame(now) {
 }
 // a live board sits behind the menu so the first frame is not empty
 setTeach(teachOn);
+setPresent(presentOn);
 setup(LEVELS[0]);
 showMenu();
 requestAnimationFrame(frame);
