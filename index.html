@@ -861,7 +861,10 @@ function autoscale(dt, uA, nApp) {
   let added = 0;
   while (uA > 0.7 && count("app") < desired && spendRate() + PARTS.app.cost <= L.cap) { addPiece("app", { auto: true }); added++; }
   if (added) { mark(`Autoscaler +${added}`, "part"); log("info", `Autoscaler added ${added} app server${added > 1 ? "s" : ""} (ready in 4s).`); renderBoard(); }
-  else if (uA > 0.7 && count("app") < desired && !S.tipsShown.autocap) { S.tipsShown.autocap = 1; log("coach", "The autoscaler wants more servers, but you are at your spend limit."); }
+  else if (uA > 0.7 && count("app") < desired && spendRate() + PARTS.app.cost > L.cap) {
+    S.capBlocked = true;
+    if (!S.tipsShown.autocap) { S.tipsShown.autocap = 1; log("coach", "The autoscaler wants more servers, but you are at your spend limit."); }
+  }
   else if (uA < 0.3 && count("app") > 2) {
     const v = S.pieces.find(p => p.type === "app" && p.auto);
     if (v) { S.pieces = S.pieces.filter(p => p !== v); log("info", "Autoscaler removed a quiet app server to save money."); renderBoard(); }
@@ -891,7 +894,7 @@ function place(type, zone) {
   const part = PARTS[type];
   if (zone !== part.zone) { toast(`${part.name} goes in the ${ZONE_NAMES[part.zone]} column. ${part.what}`); return false; }
   if (count(type) >= part.max) { toast(`You can have at most ${part.max} ${part.name.toLowerCase()}${part.max > 1 ? "s" : ""}.`); return false; }
-  if (spendRate() + part.cost > L.cap) { toast(`Over budget: this would cost $${spendRate() + part.cost} an hour. Your limit is $${L.cap}. Remove something first.`); return false; }
+  if (spendRate() + part.cost > L.cap) { if (type === "app") S.capBlocked = true; toast(`Over budget: this would cost $${spendRate() + part.cost} an hour. Your limit is $${L.cap}. Remove something first.`); return false; }
   const p = addPiece(type);
   mark("+ " + part.name, "part");
   log("info", `${part.name} added${p.az ? ` in zone ${p.az}` : ""}${p.bootLeft ? `, ready in ${part.boot}s` : ""}.`);
@@ -1010,7 +1013,14 @@ function worstProblem(S) {
   const top = Object.entries(S.blame).sort((a, b) => b[1] - a[1])[0];
   if (!top || top[1] < 1) return null;
   const p = problem(top[0]);
-  return { key: top[0], lost: top[1], name: p ? p.name : "Several small problems at once", fix: p ? p.fix : "Click the columns during the shift to see which one is full." };
+  let fix = p ? p.fix : "Click the columns during the shift to see which one is full.";
+  // Full app servers at the spend limit: more servers was never possible, so say how to make room for them.
+  if (top[0] === "apphot" && S.capBlocked) {
+    const nRep = S.pieces.filter(x => x.type === "replica").length;
+    fix = `You were at your $${L.cap}/h spend limit, so no more <b>App servers</b> could be added${S.pieces.some(x => x.type === "auto") ? " (the autoscaler tried)" : ""}. ` +
+      `Free up money for them: remove parts that are mostly idle${nRep ? `, such as some of your ${nRep} <b>Read replica${nRep > 1 ? "s" : ""}</b> ($${nRep * PARTS.replica.cost}/h)` : ""}. Click a column to see how busy it is.`;
+  }
+  return { key: top[0], lost: top[1], name: p ? p.name : "Several small problems at once", fix };
 }
 /* Which columns the board shows for a shift: only the ones its parts can go in. Pure. */
 function zoneLayout(L, pieces) {
@@ -1431,7 +1441,7 @@ function setRunning(on) {
   updateGuide();
 }
 function end(win) {
-  S.over = true; S.running = false; updateRollback();
+  S.over = true; S.running = false; updateRollback(); cancelDrag();
   $("#play").textContent = "Shift over"; $("#play").classList.remove("go"); updateGuide();
   const avgSpend = S.t ? S.spendSec / S.t : 0;
   const st = starsFor(S, L, win), worst = worstProblem(S);
@@ -1528,13 +1538,18 @@ function showMenu() {
 let drag = null;
 function zoneAt(x, y) { const el = document.elementFromPoint(x, y); const z = el && el.closest(".zone[data-z]"); return z && z.dataset.z !== "users" ? z : null; }
 function clearHi() { document.querySelectorAll(".zone").forEach(z => z.classList.remove("drop-ok", "drop-bad")); }
+// The floating label is only ever one element, and it is removed however a drag ends: a drop, a release
+// anywhere on the page, a lost pointer, the window losing focus, or the shift ending mid-drag.
+function cancelDrag() { document.querySelectorAll(".ghost").forEach(g => g.remove()); drag = null; clearHi(); }
 $("#tray").addEventListener("pointerdown", e => {
-  const card = e.target.closest(".card"); if (!card || !S || S.over) return;
-  drag = { type: card.dataset.type, x0: e.clientX, y0: e.clientY, ghost: null };
-  card.setPointerCapture(e.pointerId);
+  const card = e.target.closest(".card"); if (!card || !S || S.over || e.button !== 0) return;
+  cancelDrag();
+  drag = { type: card.dataset.type, x0: e.clientX, y0: e.clientY, ghost: null, id: e.pointerId };
+  try { card.setPointerCapture(e.pointerId); } catch (err) { /* the page still hears the release */ }
 });
-$("#tray").addEventListener("pointermove", e => {
-  if (!drag) return;
+window.addEventListener("pointermove", e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (S.over) { cancelDrag(); return; }
   if (!drag.ghost && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) {
     drag.ghost = document.createElement("div"); drag.ghost.className = "ghost";
     drag.ghost.textContent = PARTS[drag.type].name; document.body.appendChild(drag.ghost);
@@ -1545,13 +1560,14 @@ $("#tray").addEventListener("pointermove", e => {
     if (z) z.classList.add(z.dataset.z === PARTS[drag.type].zone ? "drop-ok" : "drop-bad");
   }
 });
-$("#tray").addEventListener("pointerup", e => {
-  if (!drag) return;
-  const d = drag; drag = null; clearHi();
-  if (d.ghost) { d.ghost.remove(); const z = zoneAt(e.clientX, e.clientY); if (z) place(d.type, z.dataset.z); }
+window.addEventListener("pointerup", e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag; cancelDrag();
+  if (d.ghost) { const z = zoneAt(e.clientX, e.clientY); if (z) place(d.type, z.dataset.z); }
   else { armed = armed === d.type ? null : d.type; renderTray(); if (armed) toast(`${PARTS[armed].name} picked up. Click a column on the board to place it.`); }
 });
-$("#tray").addEventListener("pointercancel", () => { if (drag && drag.ghost) drag.ghost.remove(); drag = null; clearHi(); });
+window.addEventListener("pointercancel", cancelDrag);
+window.addEventListener("blur", cancelDrag);
 $("#tray").addEventListener("keydown", e => {
   if (e.key !== "Enter" && e.key !== " ") return;
   const card = e.target.closest(".card"); if (!card) return; e.preventDefault();
