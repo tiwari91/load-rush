@@ -106,6 +106,16 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .zone.full { border: 1px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
 @media (prefers-reduced-motion: no-preference) { .card.suggest, .zone.target { animation: calmglow 2.6s ease-in-out infinite; } }
 @keyframes calmglow { 50% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 22px color-mix(in srgb, var(--accent) 50%, transparent); } }
+/* Learning path */
+.skillbar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 10px 0; }
+.skillbar i { display: block; height: 100%; background: var(--ok); }
+.skillgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.sk { padding: 9px 11px; border-radius: 8px; border: 1px dashed var(--line-2); display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-faint); }
+.sk b { color: var(--ink-dim); font-size: 13.5px; } .sk small { color: var(--ink-faint); font-size: 11px; }
+.sk.on { border-style: solid; border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 6%, transparent); }
+.sk.on b { color: var(--ok); }
+.newskill { margin: 12px 0 4px; padding: 10px 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.newskill b { color: var(--ok); } .newskill small { margin-left: auto; color: var(--ink-faint); }
 /* Part card (click a part on the board) */
 .partcard { position: fixed; z-index: 25; width: min(340px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 13px; color: var(--ink-dim); }
 .partcard .pc-h { display: flex; align-items: center; gap: 8px; } .partcard .pc-h b { color: var(--ink); font-size: 15px; flex: 1; }
@@ -1102,6 +1112,7 @@ function autoscale(dt, uA, nApp) {
   const desired = Math.min(PARTS.app.max, Math.ceil(Math.max(1, nApp) * Math.min(uA, 3) / 0.65));
   let added = 0;
   while (uA > 0.7 && count("app") < desired && spendRate() + PARTS.app.cost <= L.cap) { addPiece("app", { auto: true }); added++; }
+  if (added) S.autoAdded = true;
   if (added) { mark(`Autoscaler +${added}`, "part"); log("info", `Autoscaler added ${added} app server${added > 1 ? "s" : ""} (ready in 4s).`); renderBoard(); }
   else if (uA > 0.7 && count("app") < desired && spendRate() + PARTS.app.cost > L.cap) {
     S.capBlocked = true;
@@ -1263,6 +1274,35 @@ function starsFor(S, L, win) {
   const avg = S.t ? S.spendSec / S.t : 0;
   let st = 1; if (S.budget >= 40) st = 2; if (S.budget >= 70 && avg <= L.cap * 0.85) st = 3;
   return S.hintUsed ? Math.min(st, 2) : st;
+}
+/* The learning path: real skills, each earned the first time you show it in a shift. */
+const SKILLS = [
+  { id: "scale", name: "Scaling out", keys: ["apphot", "nolb"], level: "launch", how: "Keep overloaded app servers going yourself: a load balancer and more servers." },
+  { id: "cache", name: "Caching reads", keys: ["dbhot"], level: "sale", how: "Take repeated reads off a busy database with a cache or read replicas." },
+  { id: "cdn", name: "Serving files from a CDN", keys: ["static"], level: "bots", how: "Move images, CSS and scripts off your app servers." },
+  { id: "rate", name: "Rate limiting bots", keys: ["bots"], level: "bots", how: "Block a bot flood at the edge before it reaches your servers." },
+  { id: "queue", name: "Queues and workers", keys: ["heavy", "qnow", "qbig"], level: "checkout", how: "Move slow work to a queue, with enough workers to keep up." },
+  { id: "canary", name: "Canary releases and rollback", keys: ["deploy"], level: "deploy", how: "Catch a bad release early and roll it back." },
+  { id: "leak", name: "Spotting a memory leak", keys: ["leak"], level: "leak", how: "See that a release slowly chokes servers, and roll it back." },
+  { id: "failover", name: "Database failover", keys: ["dbdown"], level: "failover", how: "Have a standby ready before the database dies." },
+  { id: "zones", name: "Surviving a zone outage", keys: ["azdown"], level: "zone", how: "Keep enough servers to lose half of them at once." },
+  { id: "timeout", name: "Timeouts and circuit breakers", keys: ["partner"], level: "partner", how: "Stop a slow outside service from tying up your servers." },
+  { id: "auto", name: "Autoscaling", keys: [], level: "sale", part: "auto", how: "Win a shift with an autoscaler adding servers for you." },
+  { id: "cost", name: "Keeping cost down", keys: [], how: "Keep the site up while spending under 85% of your limit on average." },
+  { id: "judgement", name: "On-call judgement", keys: [], how: "Make a sound call when someone asks you for something mid-shift." },
+];
+/* Skills shown in this shift. Pure: fixed a problem yourself, prepared so it never hurt, or won the shift that teaches it. */
+function skillsShown(S, L, win) {
+  const got = new Set(), seen = S.seen || {}, helped = S.helped || {}, now = new Set((S.problems || []).map(p => p[0]));
+  for (const sk of SKILLS) {
+    if (sk.keys.some(k => seen[k] > 1 && !helped[k] && !now.has(k))) got.add(sk.id);
+    if (win && sk.level === L.id && !sk.keys.some(k => helped[k] === "do") && !(sk.part && helped[sk.part] === "do")) got.add(sk.id);
+  }
+  if (L.oncall) for (const x of L.oncall.incidents) if (S.t >= x.at && !x.keys.some(k => seen[k] > 1)) for (const sk of SKILLS) if (sk.keys.some(k => x.keys.includes(k))) got.add(sk.id);
+  if (win && S.autoAdded && helped.auto !== "do") got.add("auto");
+  if (win && S.t && S.spendSec / S.t <= L.cap * 0.85) got.add("cost");
+  if ((S.choices || []).some(c => c.pts > 0)) got.add("judgement");
+  return [...got];
 }
 /* Points for a shift. Rewards keeping health, fixing each problem yourself before the help card steps in,
    fixing it fast, surviving, and spending less than the limit. Pure. */
@@ -1513,6 +1553,8 @@ function rescue(key, lvl) {
     for (let k = 0; k < want && place(t, part.zone) !== false; k++) added++;
     const extra = t === "app" && L.tray.includes("auto") && !count("auto") && place("auto", "app") !== false;
     const cached = addCache && place("cache", "cache") !== false;
+    if (cached) S.helped.dbhot = "do";
+    if (extra) S.helped.auto = "do";
     if (cached) { S.rescued.dbhot = 2; log("coach", "Added a Cache too: it remembers common answers, so the database is not asked the same thing again and again."); }
     if (added) {
       const what = added > 1 ? `${added} ${part.name}s` : `${/^[aeiou]/i.test(part.name) ? "an" : "a"} ${part.name}`;
@@ -1962,6 +2004,9 @@ function end(win) {
   if (sc && sc.total > prevBest) { scores[bestKey] = sc.total; store.set("loadrush-scores", scores); }
   if (oc && !oc.practice) { const hist = store.get("loadrush-oncall", {}); hist[oc.day] = Math.max(hist[oc.day] || 0, sc.total); store.set("loadrush-oncall", hist); }
   const report = oc ? incidentReport(S, oc) : null;
+  const known = store.get("loadrush-skills", {}), fresh = L.sandbox ? [] : skillsShown(S, L, win).filter(id => !known[id]);
+  for (const id of fresh) known[id] = { at: dayKey(), where: L.name };
+  if (fresh.length) store.set("loadrush-skills", known);
   const errPct = S.total ? (100 * S.failed / S.total) : 0;
   openSheet(`
     <div class="kick">${win ? "Shift complete" : "Site down"}</div>
@@ -1969,6 +2014,7 @@ function end(win) {
     ${win && !oc ? `<div class="stars" aria-label="${st} of 3 stars">${"★".repeat(st)}${"☆".repeat(3 - st)}</div>` : ""}
     ${worst ? `<div class="worst ${win ? "" : "lost"}"><div class="label">${win ? "What hurt most" : "Why you lost"}</div>
       <b>${worst.name}</b> cost you <b>${Math.round(worst.lost)}%</b> of site health.<div class="wfix">Fix: ${worst.fix}</div></div>` : ""}
+    ${fresh.length ? `<div class="newskill">New skill${fresh.length > 1 ? "s" : ""}: ${fresh.map(id => `<b>✓ ${SKILLS.find(x => x.id === id).name}</b>`).join(" ")}<small>${Object.keys(known).length} of ${SKILLS.length} on your learning path</small></div>` : ""}
     ${sc ? scoreHtml(sc, prevBest) : ""}
     ${oc && !oc.practice ? streakHtml(report) : ""}
     <div class="label" style="margin-top:12px">Your shift, second by second</div>
@@ -2036,6 +2082,14 @@ function showBrief() {
   $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } };
   $("#bMenu2").onclick = showMenu;
 }
+function skillsHtml() {
+  const known = store.get("loadrush-skills", {}), n = SKILLS.filter(s => known[s.id]).length;
+  const lvName = id => (LEVELS.find(l => l.id === id) || {}).name;
+  return `<details class="more skills" style="margin-top:16px" ${n ? "" : "open"}><summary>Your learning path: ${n} of ${SKILLS.length} skills</summary>
+    <div class="skillbar"><i style="width:${100 * n / SKILLS.length}%"></i></div>
+    <div class="skillgrid">${SKILLS.map(sk => { const k = known[sk.id]; return `<div class="sk ${k ? "on" : ""}">
+      <b>${k ? "✓ " : ""}${sk.name}</b><span>${k ? `Shown in ${k.where}` : sk.how}</span>${!k && sk.level ? `<small>Taught in: ${lvName(sk.level)}</small>` : ""}</div>`; }).join("")}</div></details>`;
+}
 function bestOf(id) { const b = store.get("loadrush-scores", {})[id]; return b ? `<span class="best">best ${b.toLocaleString()} points</span>` : ""; }
 function oncallCard() {
   const today = dayKey(), lv = makeOnCall(today), oc = lv.oncall, hist = store.get("loadrush-oncall", {}), streak = oncallStreak();
@@ -2063,6 +2117,7 @@ function showMenu() {
       <button class="lv sand" data-i="practice"><span class="n">Unlimited</span><span class="t">Practice on call</span><span class="d">A random company and random incidents, as often as you like.</span>${bestOf("practice")}</button>
       <button class="lv sand" data-i="sandbox"><span class="n">Free play</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
     </div>
+    ${skillsHtml()}
     <details class="more" style="margin-top:16px"><summary>Settings: level, teach mode, big text</summary>
       <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
       <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>half speed; pauses to explain each problem</small></label><br>
