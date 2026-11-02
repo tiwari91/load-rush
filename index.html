@@ -239,6 +239,15 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 25; max-width: min(560px, calc(100% - 32px));
   background: var(--panel-2); border: 1px solid var(--warn); border-radius: 10px; padding: 10px 16px; font-size: 13.5px; opacity: 0; transition: opacity .25s; pointer-events: none; }
 .toast.show { opacity: 1; }
+.spot { position: relative; z-index: 6; box-shadow: 0 0 0 3px var(--warn), 0 0 22px 4px color-mix(in srgb, var(--warn) 45%, transparent) !important; border-radius: 10px; }
+.tour { position: fixed; z-index: 16; width: min(340px, calc(100vw - 32px)); background: var(--panel); border: 2px solid var(--warn); border-radius: 12px; padding: 14px 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.tour .tstep { font: 600 10px var(--mono); letter-spacing: .14em; color: var(--warn); text-transform: uppercase; }
+.tour .ttext { font-size: 15px; margin: 6px 0 10px; line-height: 1.45; }
+.tour .ttext b { color: var(--signal); }
+.tour .tacts { display: flex; gap: 8px; align-items: center; }
+.tour .tacts .skip { margin-left: auto; background: none; border: 0; color: var(--ink-dim); text-decoration: underline; font-size: 12.5px; }
+.tour .twait { font-size: 12.5px; color: var(--warn); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -334,6 +343,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
+<div class="tour" id="tour" hidden role="dialog" aria-label="Tutorial"></div>
 
 <script id="model">
 "use strict";
@@ -927,7 +937,7 @@ function zoneLayout(L, pieces) {
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
-let armed = null, inspected = "app";
+let armed = null, inspected = "app", wantTour = false;
 const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 let guideKey = "";
@@ -980,6 +990,7 @@ function renderTray() {
   $("#sandbox").hidden = !L.sandbox;
 }
 function renderBoard() {
+  setTimeout(tourCheck, 0);
   const newVer = S.release && S.release.share >= 1 ? "all" : S.release ? "one" : null;
   let firstApp = true;
   for (const z of document.querySelectorAll(".zone[data-z]")) {
@@ -1200,6 +1211,46 @@ function setTeach(on) {
   const tb = $("#teachBtn"); if (tb) { tb.textContent = "Teach: " + (on ? "on" : "off"); tb.classList.toggle("on", on); }
 }
 
+
+/* ================================================================== first-time tutorial (Launch Day) */
+const TOUR = [
+  { at: '.zone[data-z="users"]', text: "Visitors arrive here. Each moving dot is one visitor asking for a page." },
+  { at: '.zone[data-z="app"]', text: "Right now <b>one App server</b> does all the work. It can handle about 150 visitors a second. About 340 are coming." },
+  { at: ['.card[data-type="lb"]', '.zone[data-z="entry"]'], text: "Drag the <b>Load balancer</b> into the <b>Entry</b> column. It shares visitors between servers.", done: () => count("lb") >= 1 },
+  { at: ['.card[data-type="app"]', '.zone[data-z="app"]'], text: "Now drag <b>two more App servers</b> into the App servers column.", done: () => count("app") >= 3 },
+  { at: ".health", text: "Keep an eye on these. <b>Site health</b> drops when pages fail or load slowly. At 0% you lose." },
+  { at: "#play", text: "You're ready. Press <b>▶ Start shift</b>. The bar above the board will tell you what to do from here.", done: () => S.running },
+];
+let tourStep = -1;
+function startTour() { tourStep = 0; showTourStep(); }
+function endTour(finished) {
+  document.querySelectorAll(".spot").forEach(e => e.classList.remove("spot"));
+  $("#tour").hidden = true; tourStep = -1;
+  if (finished !== undefined) store.set("loadrush-tour-done", true);
+}
+function showTourStep() {
+  document.querySelectorAll(".spot").forEach(e => e.classList.remove("spot"));
+  const st = TOUR[tourStep]; if (!st) { endTour(true); return; }
+  const targets = [].concat(st.at).map(sel => document.querySelector(sel)).filter(Boolean);
+  targets.forEach(t => t.classList.add("spot"));
+  const box = $("#tour");
+  box.innerHTML = `<div class="tstep">Tutorial · step ${tourStep + 1} of ${TOUR.length}</div><div class="ttext">${st.text}</div>
+    <div class="tacts">${st.done ? `<span class="twait">Waiting for you to do it…</span>` : `<button class="btn go" id="tNext">Next</button>`}<button class="skip" id="tSkip">Skip tutorial</button></div>`;
+  box.hidden = false;
+  const r = targets[targets.length - 1].getBoundingClientRect(), bw = box.offsetWidth, bh = box.offsetHeight;
+  let x = r.right + 14, y = r.top;
+  if (x + bw > innerWidth - 16) { x = Math.max(16, Math.min(r.left, innerWidth - bw - 16)); y = r.bottom + 12; }
+  if (y + bh > innerHeight - 16) y = Math.max(16, r.top - bh - 12);
+  box.style.left = x + "px"; box.style.top = Math.max(16, y) + "px";
+  if ($("#tNext")) $("#tNext").onclick = () => { tourStep++; showTourStep(); };
+  $("#tSkip").onclick = () => endTour(false);
+}
+function tourCheck() {
+  if (tourStep < 0) return;
+  const st = TOUR[tourStep];
+  if (st && st.done && st.done()) { tourStep++; showTourStep(); }
+}
+
 /* ================================================================== flow of the game */
 function setup(level) {
   L = level; S = newState(); armed = null; parts = [];
@@ -1209,6 +1260,7 @@ function setup(level) {
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
 function load(level) {
+  endTour();
   setup(level);
   $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
   if (teachOn) { S.speed = 0.5; $("#speed").textContent = "½×"; } else $("#speed").textContent = "1×";
@@ -1219,6 +1271,7 @@ function load(level) {
 function setRunning(on) {
   if (!S || S.over) return;
   S.running = on;
+  setTimeout(tourCheck, 0);
   $("#play").textContent = on ? "❚❚ Pause" : (S.t > 0.01 ? "▶ Resume" : "▶ Start shift");
   $("#play").classList.toggle("go", !on);
   updateGuide();
@@ -1271,7 +1324,7 @@ function showBrief() {
     <p class="real">The game starts paused. The bar above the board always tells you what to do next.${teachOn ? " Teach mode is on: the game pauses to explain each problem." : ""}</p>
     <div class="acts"><button class="btn go" id="bGo">Got it, show me the board</button><button class="btn" id="bMenu2">All shifts</button></div>`;
   $("#ov").hidden = false;
-  $("#bGo").onclick = () => { $("#ov").hidden = true; measure(); };
+  $("#bGo").onclick = () => { $("#ov").hidden = true; measure(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } };
   $("#bMenu2").onclick = showMenu;
 }
 function showMenu() {
@@ -1294,12 +1347,16 @@ function showMenu() {
         <span class="n">SHIFT ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
         <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}</span>
       </button>`).join("")}
+      <button class="lv sand" data-i="tour"><span class="n">NEW HERE?</span><span class="t">Tutorial</span><span class="d">A 1-minute guided start on Launch Day.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="sandbox"><span class="n">FREE PLAY</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
     </div>`;
   $("#ov").hidden = false;
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); showMenu(); };
-  for (const b of document.querySelectorAll(".lv")) b.onclick = () => load(b.dataset.i === "sandbox" ? SANDBOX : LEVELS[+b.dataset.i]);
+  for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
+    if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
+    load(b.dataset.i === "sandbox" ? SANDBOX : LEVELS[+b.dataset.i]);
+  };
 }
 
 /* ================================================================== drag and drop (mouse, pen, touch) */
@@ -1358,7 +1415,7 @@ $("#speed").onclick = () => { if (!S) return; S.speed = S.speed === 1 ? 2 : S.sp
 $("#rollback").onclick = rollback;
 $("#menu").onclick = showMenu;
 document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
-addEventListener("resize", measure);
+addEventListener("resize", () => { measure(); if (tourStep >= 0) showTourStep(); });
 
 let last = performance.now(), acc = 0, histAcc = 0;
 function frame(now) {

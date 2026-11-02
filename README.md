@@ -23,6 +23,8 @@ There is also a Sandbox with traffic sliders and buttons to break things on purp
 
 ## For teaching
 
+- **Tutorial:** the first time you open Launch Day, a short guided walk-through points at exactly where to drag. Replay it from the menu.
+
 - **Teach mode** pauses the game when something goes wrong, shows a small diagram, and asks what you would do.
 - **Who is playing:** Mid-level gets hints; Staff and Principal get fewer hints and discussion questions after each shift.
 - **Inspector:** click any column or chart to see the numbers behind it.
