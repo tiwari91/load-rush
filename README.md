@@ -34,4 +34,4 @@ There is also a Sandbox with traffic sliders and buttons to break things on purp
 
 The numbers are a simple model chosen to teach the ideas, not a benchmark of any real product.
 
-One HTML file, no build step, no tracking. Progress is kept only in your browser.
+One HTML file, no build step, no tracking. Progress is kept only in your browser: a shift in progress is saved every few seconds and can be resumed after a reload, and **Menu → Copy my progress** gives a code you can paste into another browser to move your stars and settings.

@@ -263,6 +263,12 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 @media (max-width: 600px) { .words { grid-template-columns: 1fr; } .words dd { margin-bottom: 8px; } }
 body.present .stage, body.present header { zoom: 1.18; }
 body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px; }
+.resume { display: block; width: 100%; text-align: left; margin: 10px 0 2px; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, var(--panel-2)); font-size: 15px; }
+.resume b { color: var(--ok); }
+.progress { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+.progress .acts { margin-top: 8px; }
+.progcode { width: 100%; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--ground); color: var(--ink); font: 12px var(--mono); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -952,6 +958,31 @@ function guideFor(S, L, role) {
 }
 /* Staff and Principal can ask for the fix. It limits the shift to 2 stars. */
 function useHint(key) { if (!S || !key) return; S.hintUsed = true; S.hintKeys[key] = 1; mark("Hint used", "fix"); }
+/* Save and restore a shift in progress. Plain data only, so it fits in localStorage or a page snapshot. */
+function gameSnapshot(S, L) {
+  if (!S || !L || S.over || S.t < 0.5) return null;
+  return { v: 1, level: L.id, sandbox: L.sandbox ? sandboxTraffic : null, S: Object.assign({}, S, { running: false, m: null }) };
+}
+function gameFromSnapshot(snap) {
+  if (!snap || snap.v !== 1 || !snap.S) return null;
+  const level = snap.level === "sandbox" ? SANDBOX : LEVELS.find(l => l.id === snap.level);
+  if (!level) return null;
+  if (snap.sandbox) Object.assign(sandboxTraffic, snap.sandbox);
+  return { L: level, S: Object.assign(newState(), snap.S, { running: false }) };
+}
+/* Progress code: stars and settings as one short text the player can copy to another browser or site. */
+function encodeProgress(p) { return "LR1-" + btoa(JSON.stringify(p)).replace(/=+$/, ""); }
+function decodeProgress(code) {
+  const m = String(code || "").trim().match(/^LR1-([A-Za-z0-9+/]+)$/);
+  if (!m) return null;
+  try {
+    const p = JSON.parse(atob(m[1] + "===".slice((m[1].length + 3) % 4)));
+    if (!p || typeof p.stars !== "object") return null;
+    const stars = {};
+    for (const [k, v] of Object.entries(p.stars)) if ([...LEVELS.map(l => l.id)].includes(k) && [1, 2, 3].includes(v)) stars[k] = v;
+    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour };
+  } catch { return null; }
+}
 /* Hourly cost as a rough monthly figure (730 hours in a month). */
 const perMonth = perHour => (perHour * 730 / 1000).toFixed(1) + "k";
 /* Stars for a finished shift. Pure. */
@@ -1358,6 +1389,7 @@ function setup(level) {
 }
 function load(level) {
   endTour();
+  store.set("loadrush-game", null);
   setup(level);
   $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
   if (teachOn || presentOn) { S.speed = 0.5; $("#speed").textContent = "½×"; } else $("#speed").textContent = "1×";
@@ -1379,6 +1411,7 @@ function end(win) {
   const avgSpend = S.t ? S.spendSec / S.t : 0;
   const st = starsFor(S, L, win), worst = worstProblem(S);
   if (st > (stars[L.id] || 0)) { stars[L.id] = st; store.set("loadrush-stars", stars); }
+  store.set("loadrush-game", null);
   const next = LEVELS[LEVELS.indexOf(L) + 1];
   const errPct = S.total ? (100 * S.failed / S.total) : 0;
   $("#sheet").innerHTML = `
@@ -1444,6 +1477,8 @@ function showMenu() {
     <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
     <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>(recommended the first time) half speed; pauses to explain each problem with a picture and a question</small></label>
     <label class="switch" for="presentSw" style="margin-left:18px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Presenter mode <small>bigger text for a projector or screen share</small></label>
+    ${(() => { const g = gameFromSnapshot(store.get("loadrush-game", null)); return g && !(S && S.t > 0.5 && !S.over && S.running === false && L === g.L) ?
+      `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""; })()}
     <div class="levels">${LEVELS.map((lv, i) => `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
         <span class="n">SHIFT ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
@@ -1451,10 +1486,20 @@ function showMenu() {
       </button>`).join("")}
       <button class="lv sand" data-i="tour"><span class="n">NEW HERE?</span><span class="t">Tutorial</span><span class="d">A 1-minute guided start on Launch Day.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="sandbox"><span class="n">FREE PLAY</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
+    </div>
+    <div class="progress">
+      <div class="label">Your progress</div>
+      <p class="real">Stars and settings are saved in this browser only. Clearing site data, a private window, or a different browser or site starts fresh. Copy a code to keep a backup or move it.</p>
+      <div class="acts"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
+      <input type="text" id="progCode" class="progcode" hidden aria-label="Progress code" spellcheck="false" autocomplete="off">
+      <div class="real" id="progMsg"></div>
     </div>`;
   $("#ov").hidden = false;
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#presentSw").onchange = e => setPresent(e.target.checked);
+  if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
+  $("#bCopyProg").onclick = copyProgress;
+  $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); showMenu(); };
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
@@ -1521,13 +1566,46 @@ $("#words").onclick = showWords;
 document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
 addEventListener("resize", () => { measure(); if (tourStep >= 0) showTourStep(); });
 
-let last = performance.now(), acc = 0, histAcc = 0;
+/* Resume a saved shift: after a page reload, a browser restart or an update to the page. */
+function resumeGame(snap) {
+  const g = gameFromSnapshot(snap); if (!g) return false;
+  endTour();
+  setup(g.L);
+  S = g.S; S.over = false;
+  layoutZones(); renderBoard(); updateRollback(); measure();
+  step(0.001); updateLive(); pushHist(); setRunning(false);
+  $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`;
+  $("#ov").hidden = true;
+  log("good", "Your shift was restored. Press ▶ Resume to carry on.");
+  return true;
+}
+function saveGame() { store.set("loadrush-game", gameSnapshot(S, L)); }
+addEventListener("pagehide", saveGame);
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
+function copyProgress() {
+  const code = encodeProgress({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false) });
+  const box = $("#progCode"); box.value = code; box.hidden = false; box.select();
+  const done = () => { $("#progMsg").textContent = "Copied. Paste it into Load progress on any browser or computer."; };
+  try { navigator.clipboard.writeText(code).then(done, () => { $("#progMsg").textContent = "Select the code above and copy it."; }); }
+  catch { $("#progMsg").textContent = "Select the code above and copy it."; }
+}
+function loadProgress() {
+  const p = decodeProgress($("#progCode").value);
+  if (!p) { $("#progMsg").textContent = "That does not look like a Load Rush progress code. It starts with LR1-."; return; }
+  stars = p.stars; store.set("loadrush-stars", stars);
+  role = p.role; store.set("loadrush-role", role);
+  setTeach(p.teach); setPresent(p.present); store.set("loadrush-tour-done", p.tour);
+  showMenu(); toast(`Progress loaded: ${Object.keys(stars).length} shift${Object.keys(stars).length === 1 ? "" : "s"} with stars.`);
+}
+
+let last = performance.now(), acc = 0, histAcc = 0, saveAcc = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (S && S.running && !S.over) {
     acc += dt * S.speed;
     while (acc >= 0.1 && S.running) { step(0.1); acc -= 0.1; histAcc += 0.1; if (histAcc >= 0.5) { histAcc = 0; pushHist(); } }
     updateLive(); spawn(dt * S.speed);
+    saveAcc += dt; if (saveAcc >= 3) { saveAcc = 0; saveGame(); }
   }
   if (S) drawFlow(dt, S.running && !S.over);
   requestAnimationFrame(frame);
@@ -1535,9 +1613,14 @@ function frame(now) {
 // a live board sits behind the menu so the first frame is not empty
 setTeach(teachOn);
 setPresent(presentOn);
-setup(LEVELS[0]);
-showMenu();
-requestAnimationFrame(frame);
+window.claude?.hot?.snapshot?.(() => ({ game: gameSnapshot(S, L) }));
+function boot(data) {
+  setup(LEVELS[0]);
+  if (data && data.game && resumeGame(data.game)) { requestAnimationFrame(frame); return; }
+  showMenu();
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
 </script>
 </body>
 </html>
