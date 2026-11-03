@@ -4,23 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Load Rush: a real-time DevOps game. Drag load balancers, caches, queues and more onto a live system and keep it up.">
-<style>[hidden]{display:none!important} body{margin:0}
-/* Phones: nothing scrolls sideways except the board inside its box, and the parts sit in a strip along the bottom
-   (tap a part, then tap a column). */
-@media (max-width: 760px) {
-  .stage > * { min-width: 0; }
-  body { padding-bottom: 96px; }
-  aside .label, aside .tray-note { display: none; }
-  .tray { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; flex-direction: row !important; overflow-x: auto; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--ground, #1b1c1f) 94%, transparent); border-top: 1px solid var(--line); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-  .tray .card { min-width: 132px; flex: 0 0 auto; padding: 6px 8px; }
-  .tray .card .meta { font-size: 10px; }
-  .board-wrap { align-self: stretch; max-width: 100%; -webkit-overflow-scrolling: touch; }
-  .zone .zsub { display: none; }
-  .partcard { left: 8px !important; right: 8px; width: auto; }
-  #toast { bottom: calc(100px + env(safe-area-inset-bottom)) !important; }
-}
-</style>
+<style>[hidden]{display:none!important} body{margin:0}</style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
 <body>
@@ -372,6 +356,22 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
 .progress .acts { margin-top: 8px; }
 .progcode { width: 100%; margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--ground); color: var(--ink); font: 12px var(--mono); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Phones: nothing scrolls sideways except the board inside its box, and the parts sit in a strip along the bottom
+   (tap a part, then tap a column). */
+@media (max-width: 760px) {
+  .stage > * { min-width: 0; }
+  body { padding-bottom: 96px; }
+  aside .label, aside .tray-note { display: none; }
+  .tray { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; flex-direction: row !important; overflow-x: auto; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--ground, #1b1c1f) 94%, transparent); border-top: 1px solid var(--line); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .tray .card { min-width: 132px; flex: 0 0 auto; padding: 6px 8px; }
+  .tray .card .meta { font-size: 10px; }
+  .board-wrap { align-self: stretch; max-width: 100%; -webkit-overflow-scrolling: touch; }
+  .zone .zsub { display: none; }
+  .partcard { left: 8px !important; right: 8px; width: auto; }
+  #toast { bottom: calc(100px + env(safe-area-inset-bottom)) !important; }
+}
 </style>
 
 <header>
