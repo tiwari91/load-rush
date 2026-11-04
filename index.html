@@ -20,6 +20,7 @@
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
 .rgraph{width:100%;height:auto;background:rgba(0,0,0,.25);border-radius:8px;margin-top:6px}.rkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0}.rkey i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
+.bhow{margin:4px 0 10px;color:var(--dim,#aaa)}.bmiss{color:#e98a8a;margin:0 0 10px}
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -2614,11 +2615,13 @@ function playBuild(b, fromMenu) {
     openSheet(`<div class="kick">AWS Builder · ${b.name}</div><h2>Step ${Math.min(next + 1, b.steps.length)} of ${b.steps.length}</h2>
       <ol class="lab built">${b.steps.slice(0, next).map(([t, why]) => `<li><b>${t}</b><br><span class="real">${why}</span></li>`).join("")}</ol>
       ${msg || ""}
-      ${next < b.steps.length ? `<div class="choices">${order.filter(i => i >= next).map(i => `<button class="choice" data-s="${i}">${b.steps[i][0]}</button>`).join("")}</div>` : ""}
+      ${next < b.steps.length ? `<p class="bhow">${next === 0 ? "Put the setup in order. Click the step you would do <b>first</b>." : "Good. Now click the step that comes <b>next</b>."}</p><div id="bMiss"></div><div class="choices">${order.filter(i => i >= next).map(i => `<button class="choice" data-s="${i}">${b.steps[i][0]}</button>`).join("")}</div>` : ""}
       <div class="acts">${next >= b.steps.length ? `<button class="btn go" id="bBuildMore">Build another</button>` : ""}<button class="btn" id="bBuildList">All services</button></div>`, () => showBuilder(fromMenu));
     for (const el of document.querySelectorAll(".choice[data-s]")) el.onclick = () => {
       if (+el.dataset.s === next) { next++; if (next >= b.steps.length) { const d = store.get("loadrush-build", {}); d[b.id] = dayKey(); store.set("loadrush-build", d); track("build", b.id); draw(`<p><b>Built it${misses ? ` (${misses} wrong guess${misses > 1 ? "es" : ""})` : " with no wrong guesses"}.</b> ${b.part ? `Now try it in the game: the <b>${PARTS[b.part].name}</b>, or its lab in the Parts guide.` : "Try the lab in the Parts guide to do it for real."}</p>`); } else draw(); }
-      else { misses++; el.classList.add("wrong"); el.disabled = true; }
+      else { misses++; el.classList.add("wrong"); el.disabled = true;
+        const at = +el.dataset.s + 1;
+        $("#bMiss").innerHTML = `<p class="bmiss">Not yet: that is step ${at}. Something else has to exist before it. Try another.${misses >= 2 ? ` <b>Hint:</b> the next step starts with “${b.steps[next][0].split(" ").slice(0, 3).join(" ")}…”` : ""}</p>`; }
     };
     if ($("#bBuildMore")) $("#bBuildMore").onclick = () => showBuilder(fromMenu);
     $("#bBuildList").onclick = () => showBuilder(fromMenu);
