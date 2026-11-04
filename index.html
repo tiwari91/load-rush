@@ -1582,6 +1582,10 @@ const EXPERIMENTS = [
     done: m => sandboxTraffic.heavyFrac >= 0.2 && has("queue") && ready("worker").length >= 2 && m.err < 0.01, learn: "Users get an answer at once; the slow part happens in the background." },
   { id: "failover", title: "Kill the database, safely", how: "Add a Standby DB, wait until it has started, then press Kill the DB.",
     done: m => !!S.failedOver, learn: "A ready standby takes over in seconds. Without one, a restore takes much longer." },
+  { id: "zone", title: "Lose a zone, stay up", how: "Set visitors to 400+, then press Zone A down. Keep failed pages under 1% while the zone is out.",
+    done: m => S.azDown > 0 && sandboxTraffic.legit >= 400 && m.err < 0.01, learn: "With enough servers in both zones (N+1), losing a whole building costs capacity, not the site." },
+  { id: "canary", title: "A canary catches a bad release", how: "Add Canary deploys, then press Bad release. Keep failed pages under 2% while it is out.",
+    done: m => !!(S.release && S.release.kind === "bug" && S.release.share < 1 && m.err < 0.02), learn: "Only about 10% of visitors saw the bad version, and it was rolled back before the rest did." },
 ];
 function renderExperiments() {
   const box = document.getElementById("exps"); if (!box) return;
@@ -2477,7 +2481,7 @@ function showMenu() {
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
     ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b> · new <b>Parts guide</b> on the menu: what each part does, with an everyday comparison and a real example · two new On call decisions (switch the cache off? run a partner import now?) and more beginner words.</span>
+      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b> · new <b>Parts guide</b> on the menu: what each part does, with an everyday comparison and a real example · two new On call decisions (switch the cache off? run a partner import now?) and more beginner words · two new Sandbox experiments: lose a zone, and let a canary catch a bad release.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
