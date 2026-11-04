@@ -8,21 +8,26 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 
 ## Shifts
 
+Traffic basics:
 1. Launch Day: one server, rising traffic
 2. Flash Sale: a short spike of shoppers
 3. Bot Swarm: traffic jumps 8x but sales do not
 4. Checkout Crunch: slow work inside requests
-5. Friday Deploy: a bad release, twice
-6. Memory Leak: servers slowly choke and restart
-7. Failover Night: the main database dies
-8. Zone Outage: half the servers vanish
-9. Slow Partner: an outside payment API hangs
-10. Viral Video: a homepage video is shared everywhere, mostly images
-11. Payday Rush: salary day payments, then the payment network slows
-12. Storm Night: a zone goes down, then the database dies
-13. Release Week: a leaky release, a bot wave and a rushed hotfix
-14. Cache Restart: the cache comes back empty, twice (a cache stampede)
-15. Expired Certificate: a date nobody remembered takes the site down
+5. Viral Video: a homepage video is shared everywhere, mostly images
+
+Releases and failures:
+6. Friday Deploy: a bad release, twice
+7. Memory Leak: servers slowly choke and restart
+8. Failover Night: the main database dies
+9. Zone Outage: half the servers vanish
+10. Slow Partner: an outside payment API hangs
+11. Cache Restart: the cache comes back empty, twice (a cache stampede)
+12. Expired Certificate: a date nobody remembered takes the site down
+
+Big days:
+13. Payday Rush: salary day payments, then the payment network slows
+14. Storm Night: a zone goes down, then the database dies
+15. Release Week: a leaky release, a bot wave and a rushed hotfix
 16. Black Friday: everything at once
 
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
