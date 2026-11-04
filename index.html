@@ -462,12 +462,12 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
           <div class="big mono" id="uRps">0</div><div class="small">visitors<br>a second</div>
           <div class="small botc mono" id="uBots"></div>
         </div>
-        <div class="zone" data-z="edge"><div class="zhead"><span class="zname">Edge</span></div><div class="zsub">Front door: filters and serves files</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="entry"><div class="zhead"><span class="zname">Entry</span></div><div class="zsub">Shares visitors between servers</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="app"><div class="zhead"><span class="zname">App servers</span></div><div class="zsub">Run your website's code</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="cache"><div class="zhead"><span class="zname">Cache</span></div><div class="zsub">Remembers common answers</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="jobs"><div class="zhead"><span class="zname">Background jobs</span></div><div class="zsub">Does slow work later</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="data"><div class="zhead"><span class="zname">Database</span></div><div class="zsub">Stores your data</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="edge" title="Everyday: the shop's front door and doorman, plus local copies of the leaflets everyone asks for."><div class="zhead"><span class="zname">Edge</span></div><div class="zsub">Front door: filters and serves files</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="entry" title="Everyday: the person at the bank door who sends you to whichever counter is free."><div class="zhead"><span class="zname">Entry</span></div><div class="zsub">Shares visitors between servers</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="app" title="Everyday: the cashiers. Each one serves a fixed number of customers a minute."><div class="zhead"><span class="zname">App servers</span></div><div class="zsub">Run your website's code</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="cache" title="Everyday: bestsellers kept on the counter instead of fetched from the stockroom."><div class="zhead"><span class="zname">Cache</span></div><div class="zsub">Remembers common answers</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="jobs" title="Everyday: the kitchen's order tickets and the cooks who work through them."><div class="zhead"><span class="zname">Background jobs</span></div><div class="zsub">Does slow work later</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="data" title="Everyday: the shop's one official ledger, plus copies and a spare kept ready."><div class="zhead"><span class="zname">Database</span></div><div class="zsub">Stores your data</div><div class="chips"></div><div class="load"></div></div>
         <div class="paused" id="paused"><b>Paused</b><span id="pausedText">Add parts if you want, then press ▶ Start shift.</span></div>
       </div>
     </div>
@@ -1590,6 +1590,8 @@ const EXPERIMENTS = [
     done: m => S.azDown > 0 && sandboxTraffic.legit >= 400 && m.err < 0.01, learn: "With enough servers in both zones (N+1), losing a whole building costs capacity, not the site." },
   { id: "canary", title: "A canary catches a bad release", how: "Add Canary deploys, then press Bad release. Keep failed pages under 2% while it is out.",
     done: m => !!(S.release && S.release.kind === "bug" && S.release.share < 1 && m.err < 0.02), learn: "Only about 10% of visitors saw the bad version, and it was rolled back before the rest did." },
+  { id: "breaker", title: "Slow payments, fast pages", how: "Set payment calls to 5%+, add Timeouts + breaker, then press Slow payments. Keep page speed (p95) under 1 second.",
+    done: m => S.partnerSlow > 0 && sandboxTraffic.payFrac >= 0.05 && has("breaker") && m.p95 < 1000, learn: "The breaker stops waiting on the slow partner, so your servers stay free and every other page stays fast." },
 ];
 function renderExperiments() {
   const box = document.getElementById("exps"); if (!box) return;
