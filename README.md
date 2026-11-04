@@ -4,7 +4,7 @@ A browser game about keeping a website up while traffic changes in real time.
 
 **Play:** https://tiwari91.github.io/load-rush/
 
-Requests flow through your system as moving dots. Drag parts onto the board (load balancer, app servers, autoscaler, cache, read replicas, standby database, CDN, rate limiter, queue and workers, canary deploys, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
+Requests flow through your system as moving dots. Drag parts onto the board (load balancer, auto-renewing HTTPS certificates, app servers, autoscaler, cache, read replicas, standby database, CDN, rate limiter, queue and workers, canary deploys, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
 
 ## Shifts
 
@@ -22,7 +22,8 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 12. Storm Night: a zone goes down, then the database dies
 13. Release Week: a leaky release, a bot wave and a rushed hotfix
 14. Cache Restart: the cache comes back empty, twice (a cache stampede)
-15. Black Friday: everything at once
+15. Expired Certificate: a date nobody remembered takes the site down
+16. Black Friday: everything at once
 
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 

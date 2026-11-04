@@ -398,6 +398,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
     <div class="hstat"><small id="spendLbl">Cost</small><span id="spend">$0 / $0 an hour</span></div>
     <div class="ctrl">
       <button class="btn danger" id="rollback" hidden>Roll back release</button>
+      <button class="btn danger" id="renew" hidden>Renew certificate</button>
       <button class="btn go big" id="play">▶ Start shift</button>
       <button class="btn" id="speed" title="Game speed">1×</button>
       <button class="btn" id="words" title="What the words mean">Words</button>
@@ -521,6 +522,8 @@ const PARTS = {
              what: "Serves images, CSS and JS from servers near the user, so those requests never reach your app." },
   waf: { short: "Blocks floods of bot traffic",     name: "Rate limiter",  tag: "RL",  zone: "edge",  cost: 1, boot: 1, max: 1, real: "AWS WAF rate rules, nginx limit_req",
              what: "Blocks clients that send far too many requests, such as bots. Real users are not affected." },
+  acm: { short: "Renews the HTTPS certificate by itself", name: "Auto-renew certs", tag: "TLS", zone: "entry", cost: 0, boot: 1, max: 1, real: "AWS Certificate Manager, Let's Encrypt with certbot",
+             what: "Renews the site's HTTPS certificate automatically before it expires, so nobody has to remember the date." },
   db: { short: "Stores your data",      name: "Primary DB",    tag: "DB",  zone: "data",  cost: 6, boot: 0, max: 1, real: "RDS PostgreSQL",
              what: "Your one source of truth. Handles about 400 reads + writes a second." },
 };
@@ -722,6 +725,20 @@ const LEVELS = [
               "Read replicas give the database room to breathe while the cache refills.",
               "Real fixes: warm the cache before sending traffic, restart cache nodes one at a time, and let only one request rebuild each missing entry.",
               "Hands-on: flush a Redis cache in front of a test app while a load tool runs, and watch the database's CPU."] },
+  { id: "cert", watch: "The HTTPS certificate expires at 0:40. Nobody on the team remembers how it was renewed last year.", staff: ["How would you find every certificate your company uses, and when each one expires?", "What should alert you 30 days before a certificate expires, and who gets that alert?"], principal: ["Certificate outages hit even the biggest companies. Why does a simple date keep catching teams out?", "Which other 'once a year' tasks (domain renewals, licence keys, card payments) could take your site down the same way?"],
+    name: "Expired Certificate", duration: 90, cap: 40,
+    blurb: "A date nobody remembered takes the site down.",
+    story: "HTTPS certificates expire, usually once a year. If nobody renews it in time, every browser shows a big security warning and most visitors turn away, even though every server is healthy. Like a shop whose licence expired: the shop is fine, but the door is locked by law until the paperwork is renewed.",
+    brief: "Everything runs normally at about 300 visitors a second. But the site's HTTPS certificate expires at 0:40, and the engineer who renewed it by hand last year has left the company.",
+    task: "Keep the site reachable when the certificate date comes.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "acm"], fresh: ["acm"],
+    traffic: t => T({ legit: 300 }),
+    events: [{ t: 8, kind: "info", text: "Security scan: the HTTPS certificate expires at 0:40 tonight. Last year someone renewed it by hand.", prep: ["acm"], keys: ["cert"] },
+             { t: 40, kind: "cert-expire", text: "The HTTPS certificate expired. Browsers now show a big security warning." }],
+    learned: ["Healthy servers are not enough: an expired certificate makes browsers warn every visitor away.",
+              "Automate renewals (AWS Certificate Manager, Let's Encrypt with certbot) and alert well before any expiry date.",
+              "If it happens anyway, renewing by hand is the first fix; then make sure it can never depend on one person's memory again.",
+              "Hands-on: run certbot against a test domain, then check a site's expiry date with: openssl s_client -connect example.com:443 | openssl x509 -noout -enddate"] },
   { id: "friday", watch: "Everything happens today. Build a solid setup before you press Start.", staff: ["Which part removed the most load per dollar today? Which would you cut first if the budget halved?", "What would you test before next Black Friday, and how?"], principal: ["How do you plan capacity for the busiest day of the year across many teams?", "What would make next year's Black Friday a boring day?"],
     name: "Black Friday", duration: 150, cap: 70,
     blurb: "Everything at once. Start from almost nothing.",
@@ -947,6 +964,10 @@ let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, hea
 /* Every problem the game can detect, in priority order. Each one has, in one place:
    when (is it happening), text (what the pager says), fix (the Mid-level hint), teach (the Teach mode card). */
 const PROBLEMS = [
+  { key: "cert", name: "HTTPS certificate expired",
+    when: (m, apps, r) => S.certDown > 0,
+    text: (m, apps, r) => "The site's HTTPS certificate has expired. Browsers show a big security warning, and many visitors leave instead of clicking through.",
+    fix: "Click <b>Renew certificate</b> at the top now, then add <b>Auto-renew certs</b> so it never happens again." },
   { key: "nolb", name: "Only one server was used",
     when: (m, apps, r) => apps >= 2 && !m.lb,
     text: (m, apps, r) => `You have ${apps} app servers, but only one is getting requests. Something has to spread the requests across them.`,
@@ -1132,6 +1153,10 @@ function fire(kind, text) {
     log("page", (text || "Zone A is down.") + ` ${lost.length} app server${lost.length === 1 ? "" : "s"} lost. New servers go to zone B until it is back.`);
   } else if (kind === "choice") {
     if (typeof askChoice === "function" && DECISIONS[text]) askChoice(text);
+  } else if (kind === "cert-expire") {
+    if (has("acm")) log("good", "The HTTPS certificate was renewed automatically weeks ago. Nothing happened.");
+    else { S.certDown = Infinity; log("page", text || "The HTTPS certificate expired. Browsers now show a security warning."); }
+    updateRenew();
   } else if (kind === "cache-flush") {
     S.warm = 0; S.coldLeft = 25; log("page", text || "The cache restarted empty. Every read now goes to the database until it warms up.");
   } else if (kind === "partner-slow") {
@@ -1204,6 +1229,7 @@ function step(dt) {
   const bugFail = rel && rel.kind === "bug" ? BUG_FAIL * rel.share : 0;
   // cache
   if (S.coldLeft > 0) S.coldLeft = Math.max(0, S.coldLeft - dt);
+  if (S.certDown > 0 && S.certDown !== Infinity) { S.certDown -= dt; if (S.certDown <= 0) { S.certDown = 0; log("good", "New certificate installed. Browsers open the site again."); updateRenew(); } }
   S.warm = cache ? Math.min(1, S.warm + dt / (S.coldLeft > 0 ? 25 : 6)) : 0;   // after a restart the cache refills slowly
   const hit = 0.75 * S.warm;
   const servedDyn = (dynLegit + botsPass) * (1 - fA);
@@ -1236,7 +1262,7 @@ function step(dt) {
   const failDb = legitServed * dbFailShare;
   const failBug = legitServed * (1 - dbFailShare) * bugFail;
   const failedLegit = failApp + failDb + failBug + qFail + payFailed;
-  const err = legit > 0 ? Math.min(1, failedLegit / legit) : 0;
+  const err = S.certDown > 0 ? Math.max(0.12, legit > 0 ? Math.min(1, failedLegit / legit) : 0) : legit > 0 ? Math.min(1, failedLegit / legit) : 0;   // an expired certificate: browsers show a security warning and many visitors leave
   const appLat = 30 / (1 - Math.min(uA, 0.965));
   const dbLat = dbUp ? 14 / (1 - Math.min(uD, 0.965)) : 0;
   const lat = {
@@ -2040,6 +2066,12 @@ function updateHeader() {
     if (n) n.textContent = why;
   }
 }
+function updateRenew() {
+  const b = $("#renew"); if (!b) return;
+  b.hidden = !(S && S.certDown > 0); b.disabled = !!(S && S.certDown > 0 && S.certDown !== Infinity);
+  b.textContent = b.disabled ? "Renewing…" : "Renew certificate";
+}
+function renewCert() { if (!S || S.certDown !== Infinity) return; S.certDown = 3; mark("Renew certificate", "fix"); log("info", "Renewing the certificate by hand (about 3 seconds)."); updateRenew(); }
 function updateRollback() {
   const r = S && S.release, b = $("#rollback");
   b.hidden = !r || r.canaryLeft > 0;
@@ -2353,7 +2385,7 @@ const EXTRA_GUIDE = [
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
-const GUIDE_ORDER = ["cdn", "waf", "lb", "app", "auto", "canary", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
+const GUIDE_ORDER = ["cdn", "waf", "lb", "acm", "app", "auto", "canary", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
 const PART_GUIDE = {
   cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
     example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
@@ -2361,6 +2393,9 @@ const PART_GUIDE = {
   waf: { everyday: "A doorman who turns away someone asking the same question 500 times a minute, while normal customers walk straight in.",
     example: "A rule says: no single IP address may send more than 100 requests a second. A price-scraping bot sending 2,000 a second is blocked at the edge; shoppers are not affected.",
     use: "A flood of requests from a few addresses, scrapers, or a leaked API key being abused." },
+  acm: { everyday: "A calendar reminder plus an assistant who renews the shop's licence before it runs out, so the door is never locked.",
+    example: "AWS Certificate Manager issues a free certificate for www.example.com, attaches it to your load balancer and renews it every year by itself.",
+    use: "Always, for every site using HTTPS. Certificates renewed by hand are a classic cause of surprise outages." },
   lb: { everyday: "The person at the bank door who sends you to whichever counter is free.",
     example: "Three app servers sit behind one address (shop.example.com). The load balancer sends each request to the least busy healthy server and stops sending to one that fails its health check.",
     use: "As soon as you have more than one app server. Without it, extra servers get no traffic." },
@@ -2732,7 +2767,7 @@ function setup(level) {
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
-const FIX_PART = { nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+const FIX_PART = { cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
   for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
@@ -3060,6 +3095,7 @@ $("#sndBtn").onclick = () => setSound(!sndOn);
 setSound(sndOn);
 $("#speed").onclick = () => { if (!S) return; S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 0.5 : 1; $("#speed").textContent = (S.speed === 0.5 ? "½" : S.speed) + "×"; };
 $("#rollback").onclick = rollback;
+$("#renew").onclick = renewCert;
 $("#menu").onclick = showMenu;
 $("#words").onclick = showWords;
 document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
