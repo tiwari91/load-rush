@@ -21,6 +21,29 @@
 .msec .levels{margin-top:6px}
 .rgraph{width:100%;height:auto;background:rgba(0,0,0,.25);border-radius:8px;margin-top:6px}.rkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0}.rkey i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
 .bhow{margin:4px 0 10px;color:var(--dim,#aaa)}.bmiss{color:#e98a8a;margin:0 0 10px}
+.sheet.home { width: min(1120px, 100%); padding: 0 36px 28px; }
+.sheet.home .sheet-top { margin: 0 -36px; }
+.hhero { display: flex; gap: 28px; align-items: center; justify-content: space-between; padding: 4px 0 20px; }
+.hhero h2 { font-size: 36px; margin: 0 0 6px; } .hhero p { margin: 0; color: var(--ink-dim); max-width: 52ch; }
+.hcta { display: flex; flex-direction: column; gap: 8px; min-width: 300px; margin-right: 44px; }
+.ctamain { background: var(--accent); color: var(--on-signal); border: 0; border-radius: 12px; padding: 14px 20px; text-align: left; font: 700 20px var(--display); display: flex; flex-direction: column; gap: 2px; box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ctamain small { font: 600 12px var(--body); opacity: .75; } .ctamain:hover { filter: brightness(1.06); }
+.hstat { font-size: 12px; color: var(--ink-faint); text-align: center; }
+.htabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line-2); margin: 6px 0 14px; }
+.htab { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 16px; color: var(--ink-dim); font: 600 14px var(--body); }
+.htab small { font: 11px var(--mono); color: var(--ink-faint); margin-left: 4px; }
+.htab:hover { color: var(--ink); } .htab.on { color: var(--ink); border-bottom-color: var(--accent); }
+.hpane { display: none; } .hpane.on { display: block; }
+.hsub { font-size: 13px; color: var(--ink-dim); margin: 0 0 10px; }
+.sheet.home .levels { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.sheet.home .lv { padding: 14px 16px; gap: 4px; transition: border-color .15s, transform .15s; }
+.sheet.home .lv:hover:not(:disabled) { transform: translateY(-1px); }
+.sheet.home .lv.sand { border-style: solid; }
+.sheet.home .lv.next { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.lv .n em { font-style: normal; font-weight: 700; color: var(--on-signal); background: var(--accent); border-radius: 4px; padding: 0 6px; margin-left: 6px; font-size: 11px; }
+.sheet.home .msec:first-child { margin-top: 0; }
+.sheet.home .tipday { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--line-2); font-size: 13px; color: var(--ink-dim); max-width: none; }
+.sheet.home h3 { margin-top: 18px; }
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -2714,7 +2737,8 @@ function showWords() {
 }
 /* One popup at a time. onClose set = the × button, Esc and a click outside all close it. */
 let sheetClose = null, boardSeen = false;
-function openSheet(html, onClose) {
+function openSheet(html, onClose, cls) {
+  $("#ov .sheet").className = "sheet" + (cls ? " " + cls : "");
   const pc = document.getElementById("partCard"); if (pc) pc.hidden = true;
   $("#sheet").innerHTML = html;
   sheetClose = onClose || null;
@@ -2970,57 +2994,82 @@ function showMenu() {
   const unlocked = i => i === 0 || (stars[LEVELS[i - 1].id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
   const g = gameFromSnapshot(store.get("loadrush-game", null));
   const showResume = g && !(S && S.t > 0.5 && !S.over && S.running === false && L === g.L);
+  const nextI = (() => { for (let i = 0; i < LEVELS.length; i++) if (unlocked(i) && !stars[LEVELS[i].id]) return i; return -1; })();
+  const fresh = !Object.keys(stars).length;
+  const tab = (() => { try { return localStorage.getItem("loadrush-tab") || "shifts"; } catch { return "shifts"; } })();
+  const card = (i, n, t, d, s = "") => `<button class="lv" data-i="${i}"><span class="n">${n}</span><span class="t">${t}</span><span class="d">${d}</span>${s ? `<span class="s">${s}</span>` : ""}</button>`;
+  const done = LEVELS.filter(l => stars[l.id]).length;
+  const prog = (() => { const b = Object.keys(store.get("loadrush-build", {})).length, e = Object.keys(store.get("loadrush-exp", {})).length, q = store.get("loadrush-quiz-best", 0), gr = store.get("loadrush-graphs-best", 0);
+    return b || e || q || gr ? `Your progress: quiz ${q}/${QUIZ.length} · graphs ${gr}/${GRAPHS.length} · AWS builds ${b}/${BUILDS.length} · experiments ${e}/${EXPERIMENTS.length}` : "New to DevOps? Take the tutorial, then read the Parts guide."; })();
+  const tip = (() => { const tips = LEVELS.flatMap(l => l.learned.filter(t => !/^Hands-on/.test(t)).map(t => [t, l.name])); const [t, from] = tips[hashText(dayKey()) % tips.length]; return `<b>Tip of the day:</b> ${t} <i>(from ${from})</i>`; })();
   openSheet(`
-    <h2>Load Rush</h2>
-    <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
-    ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>4 new shifts · everyday explanations on every shift · a <b>Parts guide</b> and a <b>quiz</b> for beginners · new On call incidents and decisions · 2 new Sandbox experiments.</span>
-      <button class="btn" id="bNewOk">Got it</button></div>`}
-    ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
+    <div class="hhero">
+      <div><h2>Load Rush</h2><p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p></div>
+      <div class="hcta">
+        ${showResume ? `<button class="ctamain" id="bResume"><small>Resume your shift</small>${g.L.name} · ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>`
+          : nextI >= 0 ? `<button class="ctamain" data-go="${nextI}"><small>${fresh ? "Start here" : "Continue"} · Shift ${nextI + 1}</small>${LEVELS[nextI].name}</button>`
+          : `<button class="ctamain" data-go="oncall"><small>All shifts done</small>Play tonight's on-call shift</button>`}
+        ${fresh ? `<button class="btn" data-go="tour">New here? 1-minute tutorial</button>` : `<span class="hstat">${done} of ${LEVELS.length} shifts done</span>`}
+      </div>
+    </div>
     ${challenge ? `<div class="whatsnew"><b>A challenge for you</b><span>A friend scored <b>${challenge.sc} points</b> on <b>${challenge.lv.name}</b>. Can you beat it?</span><button class="btn go" id="bChallenge">Play ${challenge.lv.name}</button></div>` : ""}
-    ${(() => { const tips = LEVELS.flatMap(l => l.learned.filter(t => !/^Hands-on/.test(t)).map(t => [t, l.name])); const [t, from] = tips[hashText(dayKey()) % tips.length]; return `<p class="real tipday"><b>Tip of the day:</b> ${t} <i>(from ${from})</i></p>`; })()}
-    <div class="msec"><h3>Learn the basics <small>new to DevOps? start here, then Shift 1${(() => { const b = Object.keys(store.get("loadrush-build", {})).length, e = Object.keys(store.get("loadrush-exp", {})).length, q = store.get("loadrush-quiz-best", 0), g = store.get("loadrush-graphs-best", 0);
-      return b || e || q || g ? ` · your progress: quiz ${q}/${QUIZ.length} · graphs ${g}/${GRAPHS.length} · AWS builds ${b}/${BUILDS.length} · experiments ${e}/${EXPERIMENTS.length}` : ""; })()}</small></h3>
-    <div class="levels">
-      <button class="lv sand" data-i="tour"><span class="n">1 minute</span><span class="t">Tutorial</span><span class="d">A guided start on the first shift.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="guide"><span class="n">Read</span><span class="t">Parts guide</span><span class="d">What each part does: everyday comparison, real config, try-it-yourself lab.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="build"><span class="n">${BUILDS.length} AWS services</span><span class="t">AWS Builder</span><span class="d">Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="graphs"><span class="n">${GRAPHS.length} dashboards</span><span class="t">Read the graph</span><span class="d">Look at the lines and name the incident.</span><span class="s">${store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "&nbsp;"}</span></button>
-      <button class="lv sand" data-i="interview"><span class="n">Job prep</span><span class="t">Interview practice</span><span class="d">Senior and staff-level questions from every shift, with the points a good answer covers.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="quiz"><span class="n">8 questions</span><span class="t">Quiz</span><span class="d">Which part fixes this?</span><span class="s">${store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "&nbsp;"}</span></button>
-    </div></div>
-    <div class="msec"><h3>Play</h3>
-    <div class="levels">${oncallCard()}
-      <button class="lv sand" data-i="practice"><span class="n">Unlimited</span><span class="t">Practice on call</span><span class="d">A random company and random incidents, as often as you like.</span>${bestOf("practice")}</button>
-      <button class="lv sand" data-i="sandbox"><span class="n">Free play · ${EXPERIMENTS.length} experiments</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
-    </div></div>
-    ${[[0, 5, "Shifts: traffic basics", "one problem each: crowds, repeated reads, bots, slow work, viral files"], [5, 12, "Shifts: releases and failures", "bad releases, leaks, dead databases, lost zones, slow partners, cold caches, expired certificates"], [12, LEVELS.length, "Shifts: big days", "several problems in one shift"]].map(([from, to, title, sub]) => `
-    <div class="msec"><h3>${title} <small>${sub}</small></h3>
-    <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k; return `
-      <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
-        <span class="n">Shift ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
-        <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}${store.get("loadrush-cost", {})[lv.id] ? ` · $ ${store.get("loadrush-cost", {})[lv.id]}` : ""}</span>${bestOf(lv.id)}
-      </button>`; }).join("")}
-    </div></div>`).join("")}
-    ${skillsHtml()}
-    <details class="more" style="margin-top:16px"><summary>Settings: level, teach mode, big text</summary>
+    <div class="htabs" role="tablist">
+      <button class="htab" data-tab="shifts" role="tab">Shifts <small>${done}/${LEVELS.length}</small></button>
+      <button class="htab" data-tab="learn" role="tab">Learn</button>
+      <button class="htab" data-tab="oncall" role="tab">On call and sandbox</button>
+      <button class="htab" data-tab="settings" role="tab">Settings</button>
+    </div>
+    <div class="hpane" data-pane="shifts">
+    ${[[0, 5, "Traffic basics", "one problem each"], [5, 12, "Releases and failures", "things that break"], [12, LEVELS.length, "Big days", "several problems at once"]].map(([from, to, title, sub]) => `
+      <div class="msec"><h3>${title} <small>${sub}</small></h3>
+      <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k, u = unlocked(i), st = stars[lv.id] || 0; return `
+        <button class="lv${i === nextI ? " next" : ""}" data-i="${i}" ${u ? "" : "disabled"}>
+          <span class="n">Shift ${i + 1}${u ? "" : " · locked"}${i === nextI ? ` <em>next</em>` : ""}</span><span class="t">${lv.name}</span>
+          <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(st)}${"☆".repeat(3 - st)}${store.get("loadrush-cost", {})[lv.id] ? ` · $ ${store.get("loadrush-cost", {})[lv.id]}` : ""}</span>${bestOf(lv.id)}
+        </button>`; }).join("")}
+      </div></div>`).join("")}
+    </div>
+    <div class="hpane" data-pane="learn">
+      <p class="hsub">${prog}</p>
+      <div class="levels">
+        ${card("tour", "1 minute", "Tutorial", "A guided start on the first shift.")}
+        ${card("guide", "Read", "Parts guide", "What each part does, with an everyday comparison and the real AWS service.")}
+        ${card("build", `${BUILDS.length} AWS services`, "AWS Builder", "Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.")}
+        ${card("graphs", `${GRAPHS.length} dashboards`, "Read the graph", "Look at the lines and name the incident.", store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "")}
+        ${card("quiz", `${QUIZ.length} questions`, "Quiz", "Which part fixes this?", store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "")}
+        ${card("interview", "Job prep", "Interview practice", "Senior and staff-level questions from every shift, with the points a good answer covers.")}
+      </div>
+      <p style="margin:14px 0 0"><button class="btn" id="bGuide">How to read the board</button></p>
+      ${skillsHtml()}
+    </div>
+    <div class="hpane" data-pane="oncall">
+      <div class="levels">${oncallCard()}
+        ${card("practice", "Unlimited", "Practice on call", "A random company and random incidents, as often as you like.")}
+        ${card("sandbox", `Free play · ${EXPERIMENTS.length} experiments`, "Sandbox", SANDBOX.blurb)}
+      </div>
+    </div>
+    <div class="hpane" data-pane="settings">
+      <h3>Your level</h3>
       <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
+      <h3>Help while playing</h3>
       <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>half speed; pauses to explain each problem</small></label><br>
       <label class="switch" for="rescueSw" style="margin-top:8px"><input type="checkbox" id="rescueSw" ${rescueOn ? "checked" : ""}> Help me when health drops <small>pauses at 60% and 25% health to explain what is wrong and how to fix it</small></label><br>
       <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label>
-    </details>
-    <p style="margin:10px 0 0"><button class="btn" id="bGuide">How to read the board</button></p>
-    <details class="more"><summary>Save or move your progress</summary>
+      <h3>Save or move your progress</h3>
       <p class="real">Stars are saved in this browser only. Copy a code to keep a backup or move it to another browser.</p>
       <div class="acts" style="margin-top:8px"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
       <input type="text" id="progCode" class="progcode" hidden aria-label="Progress code" spellcheck="false" autocomplete="off">
       <div class="real" id="progMsg"></div>
-    </details>`, () => { closeSheet(); $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`; });
+    </div>
+    <p class="real tipday">${tip}</p>`, () => { closeSheet(); $("#lvname").textContent = `${L.name} · ${ROLES[role].name}`; }, "home");
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#rescueSw").onchange = e => { rescueOn = e.target.checked; store.set("loadrush-rescue", rescueOn); };
   $("#presentSw").onchange = e => setPresent(e.target.checked);
   if ($("#bGuide")) $("#bGuide").onclick = () => boardGuide(true);
-  if ($("#bNewOk")) $("#bNewOk").onclick = () => { store.set("loadrush-new-2", true); $("#whatsNew").remove(); };
+  const setTab = t => { for (const x of document.querySelectorAll("[data-tab]")) x.classList.toggle("on", x.dataset.tab === t); for (const x of document.querySelectorAll("[data-pane]")) x.classList.toggle("on", x.dataset.pane === t); try { localStorage.setItem("loadrush-tab", t); } catch {} };
+  setTab(document.querySelector(`[data-tab="${tab}"]`) ? tab : "shifts");
+  for (const x of document.querySelectorAll("[data-tab]")) x.onclick = () => setTab(x.dataset.tab);
+  for (const x of document.querySelectorAll("[data-go]")) x.onclick = () => { const v = x.dataset.go; if (v === "tour") { wantTour = true; load(LEVELS[0]); } else if (v === "oncall") load(makeOnCall(dayKey())); else load(LEVELS[+v]); };
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
   $("#bCopyProg").onclick = copyProgress;
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
