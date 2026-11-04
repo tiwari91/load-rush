@@ -722,6 +722,16 @@ const LEVELS = [
               "Good teams fix the cause (bots, slow requests, repeated reads) before buying more servers.",
               "Hands-on: build the whole thing on AWS: CloudFront, a load balancer, containers, ElastiCache, SQS and RDS."] },
 ];
+/* A real outage with the same lesson as each shift, with the company's own write-up. */
+const REAL_INCIDENTS = {
+  sale: ["Slack, 4 January 2021", "On the first working day after the holidays, everyone logged in at once. Part of Slack's cloud network could not scale fast enough for the surge, and many users could not connect.", "https://slack.engineering/slacks-outage-on-january-4th-2021/"],
+  deploy: ["Cloudflare, 2 July 2019", "A new firewall rule was released to every server worldwide at once. It used up all the CPU, and sites behind Cloudflare returned errors until the rule was turned off globally.", "https://blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/"],
+  release: ["Facebook, 4 October 2021", "A routine maintenance command cut off Facebook's network backbone, and a safety check that should have stopped it had a bug. Facebook, Instagram and WhatsApp were down for about six hours.", "https://engineering.fb.com/2021/10/05/networking-traffic/outage-details/"],
+  failover: ["GitHub, 21 October 2018", "A network problem lasting 43 seconds made GitHub's database fail over to another site. The two sites then disagreed about the data, and the site was degraded for about 24 hours while it was put right.", "https://github.blog/news-insights/company-news/oct21-post-incident-analysis/"],
+  zone: ["Amazon S3, 28 February 2017", "While debugging, an engineer ran a command meant to remove a few servers; a typo removed far more. Restarting the systems that depended on them took hours, and much of the web that used S3 in that region broke.", "https://aws.amazon.com/message/41926/"],
+  storm: ["AWS us-east-1, 7 December 2021", "Automatic scaling inside AWS's own network caused congestion, which then hid the monitoring the engineers needed to fix it. One problem caused the next, and many services in the region were impaired for hours.", "https://aws.amazon.com/message/12721/"],
+  partner: ["Fastly, 8 June 2021", "A customer's normal settings change triggered a hidden bug in Fastly's CDN. Large sites that depended on it went down at the same moment, until Fastly disabled the change about an hour later.", "https://www.fastly.com/blog/summary-of-june-8-outage"],
+};
 const SANDBOX = { id: "sandbox", name: "Sandbox", sandbox: true, duration: Infinity, cap: 120,
   blurb: "No timer. Set the traffic, break things, explain.",
   given: ["lb", "app", "app", "db"], tray: ["app", "lb", "auto", "canary", "breaker", "cache", "queue", "worker", "replica", "standby", "cdn", "waf"], fresh: [],
@@ -2789,6 +2799,7 @@ function showBrief() {
     <h2>${L.name}</h2>
     <p>${L.brief}</p>
     ${L.story ? `<p class="real"><b>In everyday terms:</b> ${L.story}</p>` : ""}
+    ${REAL_INCIDENTS[L.id] ? `<p class="real"><b>It really happened: ${REAL_INCIDENTS[L.id][0]}.</b> ${REAL_INCIDENTS[L.id][1]} <a href="${REAL_INCIDENTS[L.id][2]}" target="_blank" rel="noopener" onclick="track('real-incident','${L.id}')">Read their write-up ↗</a></p>` : ""}
     <p><b>${L.task}</b></p>
     ${retryHint && retryHint.level === L.id ? `<div class="worst"><div class="label">Hint from your last try</div><b>${retryHint.why}</b> hurt most. ${retryHint.fix} The part is glowing in your tray.</div>` : ""}
     ${fresh.length ? `<div class="label" style="margin-top:14px">New parts in your tray</div>
