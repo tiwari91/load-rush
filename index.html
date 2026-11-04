@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Load Rush: a real-time DevOps game. Drag load balancers, caches, queues and more onto a live system and keep it up.">
-<style>[hidden]{display:none!important} body{margin:0}</style>
+<style>[hidden]{display:none!important} body{margin:0}
+.pguide{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px}
+.gcard{border:1px solid var(--line,#333);border-radius:10px;padding:12px 14px}
+.gcard p{margin:6px 0;font-size:14px;line-height:1.45}
+.gh{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.gh .gz{margin-left:auto;font-size:12px;opacity:.7}
+</style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
 <body>
@@ -1686,6 +1692,7 @@ function showPartCard(id, anchor) {
   card.innerHTML = `<div class="pc-h"><span class="tag">${part.tag}</span><b>${part.name}</b><button class="pc-x" aria-label="Close">×</button></div>
     <div class="pc-m">$${part.cost}/h · ready in ${part.boot}s · ${status}</div>
     <p>${part.what}</p>
+    ${PART_GUIDE[p.type] ? `<p><b>Everyday:</b> ${PART_GUIDE[p.type].everyday}</p>` : ""}
     <p><b>When it is the wrong fix:</b> ${WRONG_FIX[p.type] || ""}</p>
     <p class="pc-real">In real life: ${part.real}.${READ_MORE[p.type] ? ` <a href="${READ_MORE[p.type][1]}" target="_blank" rel="noopener" onclick="track('read-more','${p.type}')">Read more: ${READ_MORE[p.type][0]} ↗</a>` : ""}</p>
     ${p.fixed ? "" : `<button class="btn pc-rm">Remove it</button>`}`;
@@ -2142,13 +2149,76 @@ const WORDS = [
   ["Timeout", "How long to wait for another service before giving up."],
   ["Circuit breaker", "After many failures, stop calling a service for a while and fail fast instead."],
 ];
+/* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
+   when to reach for it, and the shift that first teaches it. */
+const GUIDE_ORDER = ["cdn", "waf", "lb", "app", "auto", "canary", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
+const PART_GUIDE = {
+  cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
+    example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
+    use: "Lots of requests for files that are the same for everyone: images, video thumbnails, CSS, JavaScript." },
+  waf: { everyday: "A doorman who turns away someone asking the same question 500 times a minute, while normal customers walk straight in.",
+    example: "A rule says: no single IP address may send more than 100 requests a second. A price-scraping bot sending 2,000 a second is blocked at the edge; shoppers are not affected.",
+    use: "A flood of requests from a few addresses, scrapers, or a leaked API key being abused." },
+  lb: { everyday: "The person at the bank door who sends you to whichever counter is free.",
+    example: "Three app servers sit behind one address (shop.example.com). The load balancer sends each request to the least busy healthy server and stops sending to one that fails its health check.",
+    use: "As soon as you have more than one app server. Without it, extra servers get no traffic." },
+  app: { everyday: "A cashier: each one can serve a fixed number of customers a minute.",
+    example: "Your code (Node, Java, Python...) runs on a machine or container. Here each one handles about 150 requests a second; past that, requests wait and pages get slow.",
+    use: "When servers are busy because of real visitors. Not the fix for bots, slow outside services or a bad release." },
+  auto: { everyday: "A manager who calls in extra cashiers when the line gets long and sends them home when it is quiet.",
+    example: "A rule says: keep app servers around 60% busy. At 9 am traffic doubles, it adds two servers (each takes a few seconds to start); at midnight it removes them to save money.",
+    use: "Traffic that rises and falls during the day. For a known spike, scale up before it, because new servers need time to boot." },
+  canary: { everyday: "Trying a new recipe on one table before changing the menu for the whole restaurant.",
+    example: "Version 2.5 goes to 1 of 10 servers. If its error rate or memory jumps in the first minutes, it is rolled back automatically and 90% of users never see the bug.",
+    use: "Every release, especially busy days. It turns a bad release into a small, short problem." },
+  breaker: { everyday: "A cashier who gives up on a frozen card machine after a few seconds and asks for cash, instead of holding up the whole line.",
+    example: "Your app calls a payment API. A 1-second timeout stops one slow call tying up a server; after many failures the breaker stops calling it for 30 seconds and returns a clear error fast.",
+    use: "Any call to another service (payments, maps, login, another team's API)." },
+  cache: { everyday: "Keeping today's bestsellers on the counter instead of fetching them from the stockroom every time.",
+    example: "The product page for item 42 is built once and kept in Redis for 60 seconds. The next 10,000 visitors get the saved copy; the database is asked once a minute instead of 10,000 times.",
+    use: "The same data is read again and again: product pages, menus, user profiles. Not for data that must always be exact, like a bank balance." },
+  queue: { everyday: "A to-do list for the kitchen: the waiter writes the order down and moves on to the next table.",
+    example: "After 'Place order', the confirmation email and PDF receipt go onto a queue (SQS, RabbitMQ). The customer sees 'Order placed' at once; the email arrives a few seconds later.",
+    use: "Slow work the user does not need to wait for: emails, image resizing, reports, retrying payments." },
+  worker: { everyday: "The kitchen staff who work through the to-do list.",
+    example: "A worker process takes jobs off the queue one by one and runs them in the background. Add more workers when the queue keeps growing.",
+    use: "Always with a queue. A queue with no workers just fills up." },
+  db: { everyday: "The shop's one official ledger: every sale and stock count is written here.",
+    example: "PostgreSQL or MySQL stores users, orders and stock. Every write goes to this one primary, so it is the thing you protect most.",
+    use: "You always have one. Protect it with a cache and replicas for reads, and a standby for failures." },
+  replica: { everyday: "Photocopies of the ledger for people who only want to look things up.",
+    example: "A read replica gets every change from the primary a moment later. Product searches and reports read from it, so the primary keeps its time for writes.",
+    use: "Heavy reading that a cache cannot cover (searches, reports, many different pages). Plan ahead: replicas are slow to start." },
+  standby: { everyday: "A second till already switched on in another room, kept in sync, ready if the main one breaks.",
+    example: "The primary database in zone A dies at 2 am. The standby in zone B was copying every change, so it takes over in a few seconds and the site keeps taking orders.",
+    use: "Any database you cannot afford to lose for long. Backups restore lost data; a standby replaces a lost machine." },
+};
+const firstShiftFor = type => { const lv = LEVELS.find(l => (l.fresh || []).includes(type)) || LEVELS.find(l => (l.tray || []).includes(type) || (l.given || []).includes(type)); return lv ? `${lv.name} (shift ${LEVELS.indexOf(lv) + 1})` : "Sandbox"; };
+function showGuide(fromMenu) {
+  if (S) setRunning(false);
+  const zoneOf = t => ZONE_NAMES[PARTS[t].zone];
+  openSheet(`<div class="kick">Parts guide</div><h2>What each part does</h2>
+    <p>A visit travels left to right on the board: <b>visitor → Edge (CDN, Rate limiter) → Load balancer → App servers → Cache / Queue → Database</b>. Each part removes one kind of trouble. Start with the ones in the first shifts; the rest arrive one shift at a time.</p>
+    <div class="pguide">${GUIDE_ORDER.map(t => { const p = PARTS[t], g = PART_GUIDE[t]; return `
+      <div class="gcard"><div class="gh"><span class="tag">${p.tag}</span><b>${p.name}</b><span class="gz">${zoneOf(t)} · $${p.cost}/h</span></div>
+        <p>${p.what}</p>
+        <p><b>Everyday:</b> ${g.everyday}</p>
+        <p><b>Example:</b> ${g.example}</p>
+        <p><b>Use it when:</b> ${g.use}</p>
+        ${WRONG_FIX[t] ? `<p><b>Not the fix when:</b> ${WRONG_FIX[t]}</p>` : ""}
+        <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p></div>`; }).join("")}</div>
+    <div class="acts">${fromMenu ? `<button class="btn go" id="bGuideMenu">Back to the menu</button>` : `<button class="btn go" id="bGuideClose">Back to the game</button>`}</div>`, closeSheet);
+  if ($("#bGuideMenu")) $("#bGuideMenu").onclick = showMenu;
+  if ($("#bGuideClose")) $("#bGuideClose").onclick = closeSheet;
+  track("guide", fromMenu ? "menu" : "game");
+}
 function showWords() {
   if (S) setRunning(false);
   openSheet(`<div class="kick">Words</div><h2>What the words mean</h2>
     <dl class="words">${WORDS.map(([w, d]) => `<dt>${w}</dt><dd>${d}</dd>`).join("")}
     ${Object.values(PARTS).map(p => `<dt>${p.name}</dt><dd>${p.what} <span class="real">Real examples: ${p.real}.</span></dd>`).join("")}</dl>
-    <div class="acts"><button class="btn go" id="bCloseWords">Back to the game</button></div>`, closeSheet);
-  $("#bCloseWords").onclick = closeSheet;
+    <div class="acts"><button class="btn go" id="bCloseWords">Back to the game</button><button class="btn" id="bWordsGuide">Parts guide with examples</button></div>`, closeSheet);
+  $("#bCloseWords").onclick = closeSheet; $("#bWordsGuide").onclick = () => showGuide(false);
 }
 /* One popup at a time. onClose set = the × button, Esc and a click outside all close it. */
 let sheetClose = null, boardSeen = false;
@@ -2386,7 +2456,7 @@ function showMenu() {
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
     ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b>.</span>
+      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b> · new <b>Parts guide</b> on the menu: what each part does, with an everyday comparison and a real example.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
@@ -2395,6 +2465,7 @@ function showMenu() {
         <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}</span>${bestOf(lv.id)}
       </button>`).join("")}
       <button class="lv sand" data-i="tour"><span class="n">New here?</span><span class="t">Tutorial</span><span class="d">A 1-minute guided start.</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="guide"><span class="n">Beginners</span><span class="t">Parts guide</span><span class="d">What each part does, with an everyday comparison and a real example.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="practice"><span class="n">Unlimited</span><span class="t">Practice on call</span><span class="d">A random company and random incidents, as often as you like.</span>${bestOf("practice")}</button>
       <button class="lv sand" data-i="sandbox"><span class="n">Free play</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
     </div>
@@ -2423,6 +2494,7 @@ function showMenu() {
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); document.querySelectorAll(".role").forEach(x => x.classList.toggle("on", x === b)); };
   for (const b of document.querySelectorAll(".sk.go")) b.onclick = () => load(LEVELS.find(l => l.id === b.dataset.lv));
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
+    if (b.dataset.i === "guide") { showGuide(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }

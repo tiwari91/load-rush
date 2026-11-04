@@ -38,6 +38,8 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 
 ## For teaching
 
+- **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.
+
 - **Tutorial:** the first time you open Launch Day, a short guided walk-through points at exactly where to drag. Replay it from the menu.
 
 - **Help when health drops** (on by default): at 60% and 25% health, or when it is falling fast, the game pauses
