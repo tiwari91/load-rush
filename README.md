@@ -21,7 +21,8 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 11. Payday Rush: salary day payments, then the payment network slows
 12. Storm Night: a zone goes down, then the database dies
 13. Release Week: a leaky release, a bot wave and a rushed hotfix
-14. Black Friday: everything at once
+14. Cache Restart: the cache comes back empty, twice (a cache stampede)
+15. Black Friday: everything at once
 
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 

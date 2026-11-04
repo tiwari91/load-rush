@@ -431,6 +431,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
         <button class="btn" data-ev="db-fail">Kill the DB</button>
         <button class="btn" data-ev="az-fail">Zone A down</button>
         <button class="btn" data-ev="partner-slow">Slow payments</button>
+        <button class="btn" data-ev="cache-flush">Restart the cache</button>
       </div>
     </div>
   </aside>
@@ -706,6 +707,21 @@ const LEVELS = [
               "A rate limiter handles the bots while you deal with the release; one part per problem.",
               "Urgent hotfixes still deserve a canary. Rushed changes are the ones most likely to break.",
               "Hands-on: practise a two-problem drill: roll back a deployment while a load tool floods a test endpoint."] },
+  { id: "stampede", watch: "The cache is restarted at 0:35 and 1:10 and comes back empty. Watch the Database column when it does.", staff: ["How do you warm a cache before sending it traffic again?", "Many requests miss the cache at once and all ask the database for the same thing (a stampede). How can only one of them fetch it?"], principal: ["Maintenance on shared parts (caches, databases) needs a plan for the minutes after. Who owns that plan?", "Is the cache a speed-up or something the site cannot live without? What does your answer change?"],
+    name: "Cache Restart", duration: 100, cap: 52,
+    blurb: "The cache comes back empty, twice.",
+    story: "The cache is patched and restarted, and comes back with nothing in it. Every read suddenly goes to the database at once, like a shop whose bestseller shelf is emptied at rush hour: everyone queues at the stockroom. Engineers call it a cache stampede.",
+    brief: "A busy shop with about 480 visitors a second, almost all reading product pages. A warm cache answers most reads. At 0:35 and 1:10 the cache cluster is restarted for patching and comes back empty; it takes about 25 seconds to fill again.",
+    task: "Keep the database alive while the cache is cold.",
+    given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica"], fresh: [],
+    traffic: t => T({ legit: ramp(t, 0, 60, 460, 520), readFrac: 0.92 }),
+    events: [{ t: 10, kind: "info", text: "Ops: the cache will be patched and restarted at 0:35 and 1:10. It comes back empty.", prep: ["replica"], keys: ["dbhot"] },
+             { t: 35, kind: "cache-flush", text: "The cache restarted empty. Every read now goes to the database." },
+             { t: 70, kind: "cache-flush", text: "The cache restarted empty again." }],
+    learned: ["If the site only survives with a warm cache, the cache has become critical: plan for it being empty.",
+              "Read replicas give the database room to breathe while the cache refills.",
+              "Real fixes: warm the cache before sending traffic, restart cache nodes one at a time, and let only one request rebuild each missing entry.",
+              "Hands-on: flush a Redis cache in front of a test app while a load tool runs, and watch the database's CPU."] },
   { id: "friday", watch: "Everything happens today. Build a solid setup before you press Start.", staff: ["Which part removed the most load per dollar today? Which would you cut first if the budget halved?", "What would you test before next Black Friday, and how?"], principal: ["How do you plan capacity for the busiest day of the year across many teams?", "What would make next year's Black Friday a boring day?"],
     name: "Black Friday", duration: 150, cap: 70,
     blurb: "Everything at once. Start from almost nothing.",
@@ -1110,6 +1126,8 @@ function fire(kind, text) {
     log("page", (text || "Zone A is down.") + ` ${lost.length} app server${lost.length === 1 ? "" : "s"} lost. New servers go to zone B until it is back.`);
   } else if (kind === "choice") {
     if (typeof askChoice === "function" && DECISIONS[text]) askChoice(text);
+  } else if (kind === "cache-flush") {
+    S.warm = 0; S.coldLeft = 25; log("page", text || "The cache restarted empty. Every read now goes to the database until it warms up.");
   } else if (kind === "partner-slow") {
     S.partnerSlow = PARTNER_TIME; log("page", text || "The payment provider now takes 8 seconds to answer.");
   } else log(kind, text);
@@ -1179,7 +1197,8 @@ function step(dt) {
   const uA = capA > 0 ? appLoad / capA : (appLoad > 0 ? 9 : 0);
   const bugFail = rel && rel.kind === "bug" ? BUG_FAIL * rel.share : 0;
   // cache
-  S.warm = cache ? Math.min(1, S.warm + dt / 6) : 0;
+  if (S.coldLeft > 0) S.coldLeft = Math.max(0, S.coldLeft - dt);
+  S.warm = cache ? Math.min(1, S.warm + dt / (S.coldLeft > 0 ? 25 : 6)) : 0;   // after a restart the cache refills slowly
   const hit = 0.75 * S.warm;
   const servedDyn = (dynLegit + botsPass) * (1 - fA);
   const readsAll = servedDyn * tr.readFrac, reads = readsAll * (1 - hit);
