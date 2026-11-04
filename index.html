@@ -1325,6 +1325,19 @@ function removePiece(id) {
 const n0 = v => Math.round(v).toLocaleString("en-US");
 const pc = v => Math.round(v * 100) + "%";
 const ms = v => n0(v) + " ms";
+/* Beginner explanations for each number and column, shown under the inspector's figures. */
+const PLAIN_INSP = {
+  budget: "Your allowance for things going wrong this shift. Every failed or very slow page uses some up; at 0% the site is considered down. Real teams call it an error budget and agree it in advance with the business.",
+  p95: "Line up 100 page loads from fastest to slowest: p95 is the 95th. It shows what the unlucky visitors feel, which an average hides. Under about 800 ms feels fine.",
+  err: "Out of every 100 page requests, how many got an error instead of a page. Under 1% is the usual goal; even 5% means 1 in 20 visitors sees a broken page.",
+  users: "How many requests arrive each second, split into real people and bots. It is the size of the crowd at the door; every part on the board handles one kind of it.",
+  edge: "The front door: the CDN hands out files that never change, and the rate limiter turns away clients sending far too much, before either reaches your servers.",
+  entry: "The load balancer: one address for visitors, which it shares across every healthy app server.",
+  app: "Your code running on servers. Each one has a fixed amount of work it can do each second; busy above about 80% means everyone starts waiting.",
+  cache: "Answers to common reads kept in memory, so the database is asked once instead of thousands of times.",
+  jobs: "Slow work written on a to-do list (the queue) and done in the background by workers, so visitors get an answer at once.",
+  data: "The database: the one official record. Reads can be spread to copies and a cache; writes always go to the primary.",
+};
 function inspector(z, m) {
   const R = (k, v, cls = "") => ({ k, v, cls });
   switch (z) {
@@ -1880,7 +1893,7 @@ function renderInspector() {
   if (!S || !S.m) return;
   if (document.querySelector(`.zone[data-z="${inspected}"]`)?.hidden) inspected = "budget";
   const d = inspector(inspected, S.m);
-  $("#insp").innerHTML = `<div class="it">${d.title}</div>` + d.rows.map(r => `<div class="ir ${r.cls}"><span>${r.k}</span><b>${r.v}</b></div>`).join("") + `<div class="note">${d.note}</div>`;
+  $("#insp").innerHTML = `<div class="it">${d.title}</div>` + d.rows.map(r => `<div class="ir ${r.cls}"><span>${r.k}</span><b>${r.v}</b></div>`).join("") + `<div class="note">${d.note}</div>` + (PLAIN_INSP[inspected] ? `<div class="note"><b>In plain words:</b> ${PLAIN_INSP[inspected]}</div>` : "");
   document.querySelectorAll(".zone[data-z]").forEach(z => z.classList.toggle("inspected", z.dataset.z === inspected));
 }
 function inspect(z) { inspected = z; renderInspector(); $("#moreBox").open = true; }
