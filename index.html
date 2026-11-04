@@ -16,7 +16,7 @@
 .choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
-.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
+.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.costmedal{margin:10px 0;padding:8px 12px;border:1px dashed var(--line-2,#555);border-radius:8px;font-size:13px}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
 .rgraph{width:100%;height:auto;background:rgba(0,0,0,.25);border-radius:8px;margin-top:6px}.rkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0}.rkey i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
@@ -1426,6 +1426,9 @@ function decodeProgress(code) {
 /* Hourly cost as a rough monthly figure (730 hours in a month). */
 const perMonth = perHour => (perHour * 730 / 1000).toFixed(1) + "k";
 /* Stars for a finished shift. Pure. */
+/* Cost challenge: a medal for winning cheaply. Thresholds are shares of the shift's spend limit. */
+const COST_MEDALS = [["Gold", 0.8], ["Silver", 0.9], ["Bronze", 1]];
+const costMedal = (avg, cap) => { const m = COST_MEDALS.find(([, f]) => avg <= cap * f); return m ? m[0] : null; };
 function starsFor(S, L, win) {
   if (!win) return 0;
   const avg = S.t ? S.spendSec / S.t : 0;
@@ -2674,6 +2677,9 @@ function end(win) {
       <div><small>Average cost</small><b>$${avgSpend.toFixed(1)}/h</b><small>about $${perMonth(avgSpend)} a month</small></div>
     </div>
     ${win && st < 3 && !oc ? `<p class="real">3 stars: finish with 70%+ budget and average spend under $${Math.floor(L.cap * 0.85)}/h.</p>` : ""}
+    ${win && !oc && !L.sandbox ? (() => { const med = costMedal(avgSpend, L.cap), all = store.get("loadrush-cost", {}), rank = n => n ? 3 - COST_MEDALS.findIndex(([x]) => x === n) : 0;
+      if (med && rank(med) > rank(all[L.id])) { all[L.id] = med; store.set("loadrush-cost", all); }
+      return `<div class="costmedal"><b>Cost challenge: ${med ? med + " medal" : "no medal yet"}</b> · you averaged $${avgSpend.toFixed(1)}/h. ${COST_MEDALS.map(([n, f]) => `${n} under $${(L.cap * f).toFixed(0)}/h`).join(" · ")}. <span class="real">Real teams win by fixing the cause (cache, rate limit, queue), not by buying the most servers.</span></div>`; })() : ""}
     ${report ? report.html : ""}
     ${checkYourselfHtml(S)}
     <div class="label" style="margin-top:14px"${oc ? " hidden" : ""}>What this shift teaches</div>
@@ -2808,7 +2814,7 @@ function showMenu() {
     <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k; return `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
         <span class="n">Shift ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
-        <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}</span>${bestOf(lv.id)}
+        <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}${store.get("loadrush-cost", {})[lv.id] ? ` · $ ${store.get("loadrush-cost", {})[lv.id]}` : ""}</span>${bestOf(lv.id)}
       </button>`; }).join("")}
     </div></div>`).join("")}
     ${skillsHtml()}
