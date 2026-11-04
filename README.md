@@ -39,6 +39,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 ## For teaching
 
 - **Start here** (top of the menu): Tutorial, Parts guide, a quiz, then shifts 1 to 3 and the Sandbox.
+- **Real config and labs:** every part card shows a short real config (nginx, Kubernetes HPA, Redis, SQS in Terraform, RDS Multi-AZ...) and a **Try it yourself** lab: numbered beginner steps, free or local first (Docker, kind, Moto), real AWS only where needed with a $5 budget alarm and same-day cleanup. The guide also has an **API Gateway** card with its own free-tier lab.
 - **Quiz: which part fixes this?** Eight short scenarios; each answer explains why and gives the everyday comparison.
 
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.

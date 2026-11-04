@@ -16,6 +16,7 @@
 .choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
+.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -1720,7 +1721,7 @@ function showPartCard(id, anchor) {
     <p>${part.what}</p>
     ${PART_GUIDE[p.type] ? `<p><b>Everyday:</b> ${PART_GUIDE[p.type].everyday}</p>` : ""}
     <p><b>When it is the wrong fix:</b> ${WRONG_FIX[p.type] || ""}</p>
-    ${snippetHtml(p.type)}
+    ${snippetHtml(p.type)}${labHtml(p.type)}
     <p class="pc-real">In real life: ${part.real}.${READ_MORE[p.type] ? ` <a href="${READ_MORE[p.type][1]}" target="_blank" rel="noopener" onclick="track('read-more','${p.type}')">Read more: ${READ_MORE[p.type][0]} ↗</a>` : ""}</p>
     ${p.fixed ? "" : `<button class="btn pc-rm">Remove it</button>`}`;
   card.hidden = false;
@@ -2255,6 +2256,32 @@ max_connections = 200
 };
 const escHtml = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const snippetHtml = t => SNIPPETS[t] ? `<details class="snip"><summary>See it in real config: ${SNIPPETS[t][0]}</summary><pre><code>${escHtml(SNIPPETS[t][1])}</code></pre></details>` : "";
+/* Beginner labs: do it for real, free or local first. Each is a few numbered steps. */
+const LABS = {
+  lb: ["Free, on your laptop (Docker)", ["Start two copies of a tiny web app: docker run -d -p 8081:80 --name a nginxdemos/hello and the same with 8082 and name b.", "Write an nginx.conf with an upstream block listing localhost:8081 and localhost:8082 (see the config above).", "Run nginx with that config on port 8080 and open http://localhost:8080 several times.", "Watch the server name change between a and b: requests are being shared.", "Stop container a (docker stop a) and refresh: nginx keeps sending you to b."]],
+  app: ["Free, on your laptop (kind)", ["Install kind and kubectl, then run kind create cluster.", "kubectl create deployment web --image=nginxdemos/hello --replicas=3", "kubectl get pods -o wide: three copies of the same app.", "kubectl delete pod <one of them> and watch Kubernetes start a new one at once.", "kubectl delete deployment web when you are done."]],
+  auto: ["Free, on your laptop (kind)", ["Install metrics-server in your kind cluster (its README has a kind flag: --kubelet-insecure-tls).", "Create a Deployment with a CPU request, then kubectl autoscale deployment web --cpu-percent=60 --min=1 --max=5.", "Generate load with a busybox pod running a wget loop against the service.", "Watch kubectl get hpa -w: replicas rise as CPU climbs, then fall a few minutes after you stop."]],
+  canary: ["Free, on your laptop (kind)", ["Run version 1 as a Deployment behind a Service.", "Change the image tag and run kubectl rollout status deployment/web to watch the rollout.", "Break it on purpose (use an image tag that does not exist) and see pods fail.", "Fix it in one command: kubectl rollout undo deployment/web. That is a rollback.", "Next step: install Argo Rollouts and use the canary steps shown above."]],
+  breaker: ["Free, any language", ["Call a slow test URL: https://httpbin.org/delay/8 (it answers after 8 seconds).", "Add a 1-second timeout to the call (requests.get(url, timeout=1) in Python) and see it fail fast.", "Wrap it in a counter: after 5 failures in a row, skip the call for 30 seconds and return an error at once.", "That counter is a circuit breaker. Libraries such as resilience4j (Java) or pybreaker (Python) do it for you."]],
+  cache: ["Free, on your laptop (Docker)", ["docker run -d -p 6379:6379 --name redis redis", "Write a function that sleeps 2 seconds to pretend it is a slow database read.", "Wrap it: check Redis first, and on a miss call the slow function and save the result with ex=60 (see the config above).", "Call it twice: the first takes 2 seconds, the second is instant.", "Wait 60 seconds: the key expires and the next call is slow again (that is TTL)."]],
+  queue: ["Free, on your laptop (Docker + Moto, as in devops-lab week 2)", ["Start a local fake AWS: docker run -d -p 5000:5000 motoserver/moto", "Create a queue: aws --endpoint-url http://localhost:5000 sqs create-queue --queue-name emails", "Send 5 messages with sqs send-message.", "Read them with sqs receive-message, and delete each one after you 'process' it.", "Add a second queue as a dead-letter queue and set maxReceiveCount=5 (Terraform above)."]],
+  worker: ["Free, on your laptop", ["Use the local queue from the Queue lab.", "Run the worker loop above in one terminal.", "Send 20 messages from another terminal and watch the worker take them one by one.", "Start a second worker: the queue empties twice as fast.", "Make the job safe to run twice: skip an email whose order ID you already sent."]],
+  replica: ["Real AWS, costs cents (destroy the same day)", ["Set a $5 budget alarm first (devops-lab week 3).", "Create a small RDS PostgreSQL instance (db.t4g.micro) in the console or with Terraform.", "Add a read replica (Terraform above), wait until it is Available.", "Connect to the replica and run a SELECT; try an INSERT and see it refused: replicas are read-only.", "Delete both instances the same day."]],
+  standby: ["Real AWS, costs cents (destroy the same day)", ["Set a $5 budget alarm first.", "Create a small RDS instance with multi_az = true (Terraform above).", "In the console choose Reboot with failover.", "Keep a script running that connects every second: it fails for a short moment, then works again on the standby.", "Delete the instance the same day."]],
+  cdn: ["Free tier on AWS", ["Create an S3 bucket and upload one large image.", "Create a CloudFront distribution with the bucket as the origin (use Origin Access Control, keep the bucket private).", "Open the image through the CloudFront URL twice; check the response header x-cache: Miss, then Hit.", "Compare load times with a website speed test from two countries.", "Delete the distribution and bucket when done."]],
+  waf: ["Free, on your laptop (Docker)", ["Run nginx with the limit_req config above in front of any app.", "Install a load tool: brew install hey", "hey -n 500 -c 50 http://localhost:8080/ and look at the count of 503 answers.", "Raise the rate or burst and run it again: fewer requests are turned away.", "On AWS the same idea is a WAF rate-based rule on CloudFront or an ALB."]],
+  db: ["Free, on your laptop (Docker)", ["docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres", "Connect with psql and run SHOW max_connections;", "Open many connections at once (a loop in Python with psycopg) until you get 'too many clients'.", "That limit is why apps use a connection pool and why a cache and replicas protect the primary."]],
+};
+const labHtml = t => LABS[t] ? `<details class="snip"><summary>Try it yourself: ${LABS[t][0]}</summary><ol class="lab">${LABS[t][1].map(x => `<li>${escHtml(x)}</li>`).join("")}</ol></details>` : "";
+const EXTRA_GUIDE = [
+  { tag: "API", name: "API Gateway", zone: "Edge (not in the game)",
+    what: "A managed front door for your APIs: it checks who is calling, limits how often, routes each path to the right backend, and logs every call.",
+    everyday: "A hotel reception: it checks your key card, sends you to the right floor, and stops anyone knocking on every door.",
+    example: "GET /orders goes to an orders Lambda function, POST /pay goes to a payments container; callers without a valid API key get 403, and more than 100 calls a second gets 429.",
+    use: "Public APIs used by apps or partners, especially serverless (Lambda) back ends, where you want keys, quotas and auth without writing them yourself.",
+    real: "AWS API Gateway, Kong, Apigee, Azure API Management",
+    lab: ["Free tier on AWS", ["Set a $5 budget alarm first.", "Create a Lambda function in Python that returns {\"hello\": \"world\"}.", "In API Gateway create an HTTP API with a GET /hello route to that Lambda.", "Open the invoke URL in a browser and see your JSON.", "Add a throttling limit (for example 5 requests a second) and hit it with hey -n 200 -c 20 to see 429 answers.", "Delete the API and the function when done."]] },
+];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
 const GUIDE_ORDER = ["cdn", "waf", "lb", "app", "auto", "canary", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
@@ -2312,7 +2339,10 @@ function showGuide(fromMenu) {
         <p><b>Example:</b> ${g.example}</p>
         <p><b>Use it when:</b> ${g.use}</p>
         ${WRONG_FIX[t] ? `<p><b>Not the fix when:</b> ${WRONG_FIX[t]}</p>` : ""}
-        <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p>${snippetHtml(t)}</div>`; }).join("")}</div>
+        <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p>${snippetHtml(t)}${labHtml(t)}</div>`; }).join("")}${EXTRA_GUIDE.map(g => `
+      <div class="gcard"><div class="gh"><span class="tag">${g.tag}</span><b>${g.name}</b><span class="gz">${g.zone}</span></div>
+        <p>${g.what}</p><p><b>Everyday:</b> ${g.everyday}</p><p><b>Example:</b> ${g.example}</p><p><b>Use it when:</b> ${g.use}</p>
+        <p class="real">In real life: ${g.real}.</p><details class="snip"><summary>Try it yourself: ${g.lab[0]}</summary><ol class="lab">${g.lab[1].map(x => `<li>${escHtml(x)}</li>`).join("")}</ol></details></div>`).join("")}</div>
     <div class="acts">${fromMenu ? `<button class="btn go" id="bGuideMenu">Back to the menu</button>` : `<button class="btn go" id="bGuideClose">Back to the game</button>`}<button class="btn" id="bGuideQuiz">Quiz: which part fixes this?</button></div>`, closeSheet);
   $("#bGuideQuiz").onclick = () => showQuiz(fromMenu);
   if ($("#bGuideMenu")) $("#bGuideMenu").onclick = showMenu;
