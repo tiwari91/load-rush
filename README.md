@@ -26,7 +26,7 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 
-There is also a Sandbox with traffic sliders, buttons to break things on purpose, and nine guided experiments (load balancer, cache, bot flood, CDN, queue, safe database failover, losing a zone, a canary catching a bad release, a circuit breaker against slow payments), each ticked off when you reach its goal.
+There is also a Sandbox with traffic sliders, buttons to break things on purpose, and ten guided experiments (load balancer, cache, bot flood, CDN, queue, safe database failover, losing a zone, a canary catching a bad release, a circuit breaker against slow payments, surviving a cold cache), each ticked off when you reach its goal.
 
 ## On call (a new shift every day)
 

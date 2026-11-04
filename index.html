@@ -1661,6 +1661,8 @@ const EXPERIMENTS = [
     done: m => !!(S.release && S.release.kind === "bug" && S.release.share < 1 && m.err < 0.02), learn: "Only about 10% of visitors saw the bad version, and it was rolled back before the rest did." },
   { id: "breaker", title: "Slow payments, fast pages", how: "Set payment calls to 5%+, add Timeouts + breaker, then press Slow payments. Keep page speed (p95) under 1 second.",
     done: m => S.partnerSlow > 0 && sandboxTraffic.payFrac >= 0.05 && has("breaker") && m.p95 < 1000, learn: "The breaker stops waiting on the slow partner, so your servers stay free and every other page stays fast." },
+  { id: "stampede", title: "Survive a cold cache", how: "Set visitors to 700+ and reading to 90%+, with a warm Cache. Press Restart the cache and keep the Database under 85% busy while it refills.",
+    done: m => S.coldLeft > 0 && S.coldLeft < 20 && sandboxTraffic.legit >= 700 && sandboxTraffic.readFrac >= 0.9 && has("cache") && m.dbUp && m.uD < 0.85, learn: "Read replicas gave the database room while the cache refilled. A site that only copes with a warm cache needs that headroom." },
 ];
 function renderExperiments() {
   const box = document.getElementById("exps"); if (!box) return;
@@ -2925,6 +2927,7 @@ function showMenu() {
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     ${challenge ? `<div class="whatsnew"><b>A challenge for you</b><span>A friend scored <b>${challenge.sc} points</b> on <b>${challenge.lv.name}</b>. Can you beat it?</span><button class="btn go" id="bChallenge">Play ${challenge.lv.name}</button></div>` : ""}
+    ${(() => { const tips = LEVELS.flatMap(l => l.learned.filter(t => !/^Hands-on/.test(t)).map(t => [t, l.name])); const [t, from] = tips[hashText(dayKey()) % tips.length]; return `<p class="real tipday"><b>Tip of the day:</b> ${t} <i>(from ${from})</i></p>`; })()}
     <div class="msec"><h3>Learn the basics <small>new to DevOps? start here, then Shift 1${(() => { const b = Object.keys(store.get("loadrush-build", {})).length, e = Object.keys(store.get("loadrush-exp", {})).length, q = store.get("loadrush-quiz-best", 0), g = store.get("loadrush-graphs-best", 0);
       return b || e || q || g ? ` · your progress: quiz ${q}/${QUIZ.length} · graphs ${g}/${GRAPHS.length} · AWS builds ${b}/${BUILDS.length} · experiments ${e}/${EXPERIMENTS.length}` : ""; })()}</small></h3>
     <div class="levels">
