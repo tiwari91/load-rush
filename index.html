@@ -2714,6 +2714,7 @@ function end(win) {
     <div class="acts">
       ${win && next ? `<button class="btn go" id="bNext">Next shift: ${next.name}</button>` : ""}
       ${oc ? `<button class="btn go" id="bPractice">${oc.practice ? "Another practice shift" : "Practice shift (random)"}</button>` : ""}
+      ${win && sc && !oc ? `<button class="btn" id="bShare">Challenge a friend</button>` : ""}
       <button class="btn ${win && next || oc ? "" : "go"}" id="bRetry">${oc && !oc.practice ? "Play today's again" : "Try again"}</button>
       ${worst && FIX_PART[worst.key] && L.tray.includes(FIX_PART[worst.key]) ? `<button class="btn ${win ? "" : "go"}" id="bRetryHint">Try again with a hint: ${PARTS[FIX_PART[worst.key]].name}</button>` : ""}
       <button class="btn" id="bMenu">All shifts</button>
@@ -2736,6 +2737,12 @@ function end(win) {
     track("oncall-share", oc.day);
   };
   $("#bRetry").onclick = () => { retryHint = null; load(L); };
+  if ($("#bShare")) $("#bShare").onclick = () => {
+    const url = challengeLink(L, sc.total), text = `I scored ${sc.total} points on ${L.name} in Load Rush. Can you beat it? ${url}`;
+    track("share", L.id);
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast("Challenge link copied. Paste it to a friend."), () => prompt("Copy this challenge link:", text));
+  };
+  if (challenge && win && sc && L === challenge.lv) toast(sc.total > challenge.sc ? `You beat your friend's ${challenge.sc} points!` : `Your friend's ${challenge.sc} points still stands. Try again?`);
   if ($("#bRetryHint")) $("#bRetryHint").onclick = () => { retryHint = { level: L.id, part: FIX_PART[worst.key], why: worst.name, fix: worst.fix }; track("retry-hint", worst.key); load(L); };
   $("#bMenu").onclick = showMenu;
   log(win ? "good" : "page", win ? "Shift complete." : "Error budget is gone. Site down.");
@@ -2821,6 +2828,7 @@ function showMenu() {
       <span>4 new shifts · everyday explanations on every shift · a <b>Parts guide</b> and a <b>quiz</b> for beginners · new On call incidents and decisions · 2 new Sandbox experiments.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
+    ${challenge ? `<div class="whatsnew"><b>A challenge for you</b><span>A friend scored <b>${challenge.sc} points</b> on <b>${challenge.lv.name}</b>. Can you beat it?</span><button class="btn go" id="bChallenge">Play ${challenge.lv.name}</button></div>` : ""}
     <div class="msec"><h3>Learn the basics <small>new to DevOps? start here, then Shift 1</small></h3>
     <div class="levels">
       <button class="lv sand" data-i="tour"><span class="n">1 minute</span><span class="t">Tutorial</span><span class="d">A guided start on the first shift.</span><span class="s">&nbsp;</span></button>
@@ -2866,6 +2874,7 @@ function showMenu() {
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); document.querySelectorAll(".role").forEach(x => x.classList.toggle("on", x === b)); };
   for (const b of document.querySelectorAll(".sk.go")) b.onclick = () => load(LEVELS.find(l => l.id === b.dataset.lv));
+  if ($("#bChallenge")) $("#bChallenge").onclick = () => { track("challenge", challenge.lv.id); load(challenge.lv); };
   for (const b of document.querySelectorAll("[data-start]")) b.onclick = () => {
     const k = b.dataset.start; track("start-here", k);
     if (k === "guide") showGuide(true); else if (k === "quiz") showQuiz(true);
@@ -3004,6 +3013,9 @@ function frame(now) {
 setTeach(teachOn);
 setPresent(presentOn);
 window.claude?.hot?.snapshot?.(() => ({ game: gameSnapshot(S, L) }));
+/* Challenge a friend: a link carries the shift and the score to beat. */
+const challenge = (() => { try { const q = new URLSearchParams(location.search); const lv = LEVELS.find(l => l.id === q.get("challenge")); const sc = parseInt(q.get("score"), 10); return lv && sc > 0 ? { lv, sc } : null; } catch (e) { return null; } })();
+const challengeLink = (lv, sc) => `${location.origin}${location.pathname}?challenge=${lv.id}&score=${sc}`;
 function boot(data) {
   setup(LEVELS[0]);
   if (data && data.game && resumeGame(data.game)) { requestAnimationFrame(frame); return; }
