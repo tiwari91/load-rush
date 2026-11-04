@@ -2777,6 +2777,7 @@ function setup(level) {
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
+const SHIFT_BUILD = { launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
 const FIX_PART = { cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
@@ -2857,6 +2858,7 @@ function end(win) {
       ${win && next ? `<button class="btn go" id="bNext">Next shift: ${next.name}</button>` : ""}
       ${oc ? `<button class="btn go" id="bPractice">${oc.practice ? "Another practice shift" : "Practice shift (random)"}</button>` : ""}
       ${win && sc && !oc ? `<button class="btn" id="bShare">Challenge a friend</button>` : ""}
+      ${SHIFT_BUILD[L.id] ? `<button class="btn" id="bNextBuild">Next: practise it on AWS (${BUILDS.find(b => b.id === SHIFT_BUILD[L.id]).name})</button>` : ""}
       <button class="btn ${win && next || oc ? "" : "go"}" id="bRetry">${oc && !oc.practice ? "Play today's again" : "Try again"}</button>
       ${worst && FIX_PART[worst.key] && L.tray.includes(FIX_PART[worst.key]) ? `<button class="btn ${win ? "" : "go"}" id="bRetryHint">Try again with a hint: ${PARTS[FIX_PART[worst.key]].name}</button>` : ""}
       <button class="btn" id="bMenu">All shifts</button>
@@ -2872,6 +2874,7 @@ function end(win) {
     track(o[1] ? "check-right" : "check-wrong", b.dataset.k);
   };
   if ($("#bPractice")) $("#bPractice").onclick = () => load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9)));
+  if ($("#bNextBuild")) $("#bNextBuild").onclick = () => { track("next-build", L.id); playBuild(BUILDS.find(b => b.id === SHIFT_BUILD[L.id]), true); };
   if ($("#bShare")) $("#bShare").onclick = () => {
     const text = `Load Rush · on call ${oc.date}\n${report.squares} ${sc.total} points\n${report.streak}-day streak · https://tiwari91.github.io/load-rush/`;
     const done = () => { $("#bShare").textContent = "Copied"; };
