@@ -1512,7 +1512,10 @@ function guideFor(S, L, role) {
   else if (!S.running) { title = "Paused"; text = "Press ▶ Resume when you are ready. You can add parts while paused."; }
   else {
     const prob = (S.problems || [])[0];
-    if (!prob) { cls = "ok"; icon = "✓"; title = "All good"; text = "Visitors are getting fast pages. Keep watching for changes."; }
+    const m = S.m || {}, busiest = (m.uD || 0) > (m.uA || 0) ? "Database" : "App servers";
+    if (!prob && m.p95 > 800) { cls = "warn"; icon = "!"; title = "Pages are slow"; text = `Pages take ${Math.round(m.p95)} ms. Over 800 ms starts to cost site health. The busiest column is ${busiest}: click it to see why.`; }
+    else if (!prob && m.p95 > 400) { cls = "ok"; icon = "✓"; title = "Mostly fine"; text = `Pages take ${Math.round(m.p95)} ms: OK, but not fast. Keep an eye on ${busiest}.`; }
+    else if (!prob) { cls = "ok"; icon = "✓"; title = "All good"; text = "Visitors are getting fast pages. Keep watching for changes."; }
     else {
       cls = S.budget < 40 ? "bad" : "warn"; icon = "!"; title = prob[1];
       const showFix = role === "mid" || (S.hintKeys && S.hintKeys[prob[0]]);
@@ -2076,13 +2079,13 @@ function renderBoard() {
   }
   updateHeader();
 }
-function setLoad(zone, u, text) {
+function setLoad(zone, u, text, highIsGood) {
   const el = document.querySelector(`.zone[data-z="${zone}"] .load`);
   if (u === null) { el.innerHTML = ""; el.closest(".zone").classList.remove("busy", "full"); return; }
   if (!el.firstChild) el.innerHTML = `<div class="bar"><i></i></div><div class="txt"><span></span><span></span></div>`;
-  const zEl = el.closest(".zone"); zEl.classList.toggle("busy", u > 0.75 && u <= 0.95); zEl.classList.toggle("full", u > 0.95);
+  const zEl = el.closest(".zone"); zEl.classList.toggle("busy", !highIsGood && u > 0.75 && u <= 0.95); zEl.classList.toggle("full", !highIsGood && u > 0.95);
   const i = el.querySelector("i"); i.style.width = Math.min(100, u * 100) + "%";
-  i.style.background = u > 0.95 ? "var(--bad)" : u > 0.75 ? "var(--warn)" : "var(--ok)";
+  i.style.background = highIsGood ? (u >= 0.9 ? "var(--ok)" : u >= 0.4 ? "var(--warn)" : "var(--bad)") : u > 0.95 ? "var(--bad)" : u > 0.75 ? "var(--warn)" : "var(--ok)";
   const [a, b] = el.querySelectorAll(".txt span"); a.textContent = text; b.textContent = Math.round(u * 100) + "%";
 }
 function updateLive() {
@@ -2091,7 +2094,7 @@ function updateLive() {
   $("#uBots").textContent = m.bots > 1 ? `+${Math.round(m.bots)} bots` : "";
   setLoad("app", Math.min(m.uA, 1.5), `${m.nApp} running${!m.lb && m.nApp > 1 ? ", only 1 used" : ""}${m.health < 0.99 ? ` · ${pc(m.health)} health` : ""}`);
   setLoad("data", m.dbUp ? Math.min(m.uD, 1.5) : 1.5, !m.dbUp ? `DOWN ${Math.ceil(S.dbDown)}s` : m.reps ? `primary · replicas ${pc(m.uR)}` : "primary");
-  setLoad("cache", has("cache") ? m.hit / 0.75 : null, "warm");
+  setLoad("cache", has("cache") ? m.hit / 0.75 : null, "warm", true);
   setLoad("jobs", has("queue") ? Math.min(1, S.backlog / 3000) : null, `${Math.round(S.backlog)} waiting`);
   setLoad("edge", m.waf && m.bots > 1 ? (m.bots - m.botsPass) / m.bots : null, "bots blocked");
   document.querySelector('.zone[data-z="data"]').classList.toggle("alarm", !m.dbUp);
