@@ -44,6 +44,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Read the graph:** six dashboards (memory leak, bot flood, zone outage, bad release, traffic spike, slow partner); name the incident from the shape of the lines.
 - **Try again with a hint:** after a rough shift, retry with the part that fixes what hurt most glowing in the tray.
 - **Cost challenge:** win a shift under 80%, 90% or 100% of its spend limit for a Gold, Silver or Bronze cost medal, shown on the shift card.
+- **Write-up practice:** after an On call shift, write the 3-line incident summary yourself, then compare it with a model answer built from your shift.
 - **Quiz: which part fixes this?** Eight short scenarios; each answer explains why and gives the everyday comparison.
 
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.

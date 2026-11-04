@@ -16,7 +16,7 @@
 .choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
-.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.costmedal{margin:10px 0;padding:8px 12px;border:1px dashed var(--line-2,#555);border-radius:8px;font-size:13px}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
+.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.writeup textarea{width:100%;box-sizing:border-box;margin-top:6px;background:rgba(0,0,0,.3);color:inherit;border:1px solid var(--line-2,#555);border-radius:8px;padding:8px;font:inherit;font-size:13px}.costmedal{margin:10px 0;padding:8px 12px;border:1px dashed var(--line-2,#555);border-radius:8px;font-size:13px}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
 .rgraph{width:100%;height:auto;background:rgba(0,0,0,.25);border-radius:8px;margin-top:6px}.rkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0}.rkey i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
@@ -1554,6 +1554,18 @@ function streakHtml(report) {
   return `<div class="streak"><span><b>${report.streak}</b>-day streak</span><span>${report.squares}</span>
     <button class="btn" id="bShare">Copy result</button><small>Next on-call shift in ${untilTomorrow()}</small></div>`;
 }
+/* Practise the write-up: the player writes three lines, then compares with a model answer built from the shift. */
+function writeupPractice(S, oc) {
+  const hit = oc.incidents.filter(x => S.t >= x.at);
+  const what = hit.map(x => `${x.title.toLowerCase()} at ${clockText(x.at)}`).join(", ") || "nothing went wrong before the shift ended";
+  const impact = S.budget > 0 ? `the site stayed up; site health ended at ${Math.round(S.budget)}%` : `the site went down when site health reached 0%`;
+  const next = hit.slice(0, 2).map(x => x.lesson).join(" ");
+  return `<details class="snip writeup"><summary>Practise: write the 3-line incident summary yourself</summary>
+    <p class="real">Real teams write this after every incident, without blame: what happened, the impact, and what you will change.</p>
+    <textarea rows="4" placeholder="What happened...&#10;Impact...&#10;What we will change..."></textarea>
+    <details class="snip"><summary>Show a model answer</summary><ol class="lab">
+      <li><b>What happened:</b> ${what}.</li><li><b>Impact:</b> ${impact}.</li><li><b>What we will change:</b> ${next || "keep the setup; nothing failed."}</li></ol></details></details>`;
+}
 function incidentReport(S, oc) {
   const rows = [], sq = [];
   for (const x of oc.incidents) {
@@ -1578,7 +1590,7 @@ function incidentReport(S, oc) {
       <p>${c.why}</p><p><b>Lesson:</b> ${d.lesson}</p></li>`);
   }
   return { squares: sq.join(""), streak: oncallStreak(),
-    html: `<div class="label" style="margin-top:14px">Incident report <small>(what happened, and what to remember)</small></div><ol class="pms">${rows.join("")}</ol>` };
+    html: `<div class="label" style="margin-top:14px">Incident report <small>(what happened, and what to remember)</small></div><ol class="pms">${rows.join("")}</ol>${writeupPractice(S, oc)}` };
 }
 
 /* ---- sandbox experiments: a goal the game checks, ticked off when you reach it ---- */
@@ -2679,7 +2691,7 @@ function end(win) {
     ${win && st < 3 && !oc ? `<p class="real">3 stars: finish with 70%+ budget and average spend under $${Math.floor(L.cap * 0.85)}/h.</p>` : ""}
     ${win && !oc && !L.sandbox ? (() => { const med = costMedal(avgSpend, L.cap), all = store.get("loadrush-cost", {}), rank = n => n ? 3 - COST_MEDALS.findIndex(([x]) => x === n) : 0;
       if (med && rank(med) > rank(all[L.id])) { all[L.id] = med; store.set("loadrush-cost", all); }
-      return `<div class="costmedal"><b>Cost challenge: ${med ? med + " medal" : "no medal yet"}</b> · you averaged $${avgSpend.toFixed(1)}/h. ${COST_MEDALS.map(([n, f]) => `${n} under $${(L.cap * f).toFixed(0)}/h`).join(" · ")}. <span class="real">Real teams win by fixing the cause (cache, rate limit, queue), not by buying the most servers.</span></div>`; })() : ""}
+      return `<div class="costmedal"><b>Cost challenge: ${med ? med + " medal" : "no medal yet"}</b> · you averaged $${avgSpend.toFixed(1)}/h. ${COST_MEDALS.map(([n, f]) => `${n} up to $${(L.cap * f).toFixed(0)}/h`).join(" · ")}. <span class="real">Real teams win by fixing the cause (cache, rate limit, queue), not by buying the most servers.</span></div>`; })() : ""}
     ${report ? report.html : ""}
     ${checkYourselfHtml(S)}
     <div class="label" style="margin-top:14px"${oc ? " hidden" : ""}>What this shift teaches</div>
