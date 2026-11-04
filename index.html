@@ -520,6 +520,7 @@ const LEVELS = [
   { id: "launch", watch: "One App server handles about 150 visitors a second. Traffic will climb to about 340. Add parts, then press \u25b6 Start shift.", staff: ["The app keeps nothing in memory between requests, so copies are interchangeable. What breaks if it kept user sessions in memory?", "How much spare capacity do you keep, and how do you decide? Spare capacity costs money every hour."], principal: ["Who decides what 'fast enough' means (the SLO), and how does that target change what teams build?", "Launch traffic is a guess. How do you set up a launch so a wrong guess is cheap?"],
     name: "Launch Day", duration: 90, cap: 25,
     blurb: "One server, rising traffic.",
+    story: "A shop with one cashier on opening day: the line grows faster than one person can serve. If you build web or mobile apps, this is the day your app gets featured and the API behind it slows down for everyone.",
     brief: "Marketing just posted the launch. Traffic starts small and keeps climbing to about 340 users a second. Right now one app server does everything, and it handles about 150.",
     task: "Keep the site up until the shift ends.",
     given: ["app", "db"], tray: ["app", "lb", "cache"], fresh: ["app", "lb", "cache"],
@@ -531,6 +532,7 @@ const LEVELS = [
   { id: "sale", watch: "At 0:25 about 700 visitors a second arrive, mostly reading product pages. Keep an eye on the Database.", staff: ["Cache or replicas? The cache is cheaper but can show old prices. When is old data not OK?", "The autoscaler reacts after load rises. When should you add capacity before the event instead?"], principal: ["Marketing knew about the sale; the people running the system did not. What process fixes that?", "Who pays for capacity that sits idle all year so you survive one sale day?"],
     name: "Flash Sale", duration: 95, cap: 42,
     blurb: "A 40-second spike of shoppers.",
+    story: "Thousands of people ask for the same product page at once. Like a library where everyone wants the same book: hand out copies (a cache) instead of sending everyone to the one librarian (the database). Frontend developers see it as pages that load fine in testing and time out on sale day.",
     brief: "At 0:25 an email goes out to every customer: 50% off for one hour. Expect about 700 users a second for 40 seconds, almost all of them reading product pages.",
     task: "Survive the spike without burning your error budget.",
     given: ["lb", "app", "app", "db"], tray: ["app", "lb", "auto", "cache", "replica"], fresh: ["auto", "replica"],
@@ -543,6 +545,7 @@ const LEVELS = [
   { id: "bots", watch: "Something strange arrives at 0:18. Purple dots are bots.", staff: ["A limit per IP address can block a whole office or mobile network that shares one address. What else can you limit by?", "What does the CDN keep, for how long, and how do you clear it after a release?"], principal: ["Is bot traffic an engineering, security or business problem? Who owns it?", "Build your own protection or pay a vendor? What would change your answer?"],
     name: "Bot Swarm", duration: 100, cap: 40,
     blurb: "Traffic jumps 8× but sales do not.",
+    story: "Most of the new “visitors” are scripts copying your prices, not people. Like a crowd asking the shop staff the time again and again, so real customers cannot be served. Mobile and API developers meet this as a sudden flood from a few IP addresses or one leaked API key.",
     brief: "Normal day, about 250 users a second, half of them loading images and CSS. Something odd is about to happen.",
     task: "Keep real users happy. Do not just buy servers until it stops.",
     given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "cdn", "waf"], fresh: ["cdn", "waf"],
@@ -556,6 +559,7 @@ const LEVELS = [
   { id: "checkout", watch: "Every checkout does slow work while the visitor waits. Keep an eye on Page speed.", staff: ["With a queue, an email may arrive late or twice. How do you make jobs safe to run twice?", "What happens to a job that fails five times? Where does it go, and who looks at it?"], principal: ["Moving work to a queue changes what 'order placed' promises the customer. Who agrees to that?", "How would you spot slow work inside requests before customers do?"],
     name: "Checkout Crunch", duration: 100, cap: 40,
     blurb: "Checkout does slow work while the user waits.",
+    story: "Each order makes the customer wait while the server sends emails and builds receipts. Like a waiter who cooks your meal before taking the next order. The fix is a to-do list (a queue) that kitchen staff (workers) work through, so the customer gets an answer at once.",
     brief: "Every checkout sends an email and resizes product photos before answering the user. Fine at night. Today 12-18% of requests are checkouts. Also, the server rack has been flaky.",
     task: "Bring p95 under 800 ms and keep it there.",
     given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "cdn", "waf", "queue", "worker"], fresh: ["queue", "worker"],
@@ -568,6 +572,7 @@ const LEVELS = [
   { id: "deploy", watch: "New versions go out at 0:25 and 1:10. If failed pages jump, a red Roll back button appears at the top.", staff: ["What should a canary watch, and for how long, before the version goes to everyone?", "Some changes cannot be rolled back, like a database change. How do you release those safely?"], principal: ["Ban Friday releases, or make releases safe enough for any day?", "How do you measure release health across teams: how often you release, how often releases fail, how fast you recover?"],
     name: "Friday Deploy", duration: 100, cap: 40,
     blurb: "A release breaks checkout. Twice.",
+    story: "A new version of the code ships with a bug in checkout. Every developer has shipped a bug; this shift is about limiting who sees it and undoing it in seconds, like a feature flag or a staged app-store rollout.",
     brief: "The team is releasing version 2.5 at 0:25 and 2.6 at 1:10. Nobody ran the full test suite. If a release is bad, a red Roll back button appears at the top. Rolling back takes 5 seconds.",
     task: "Keep errors low through two releases.",
     given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "canary"], fresh: ["canary"],
@@ -579,6 +584,7 @@ const LEVELS = [
   { id: "leak", watch: "A new version goes out at 0:15. Keep an eye on the health % in the App servers column.", staff: ["Which graph would have shown this within minutes of the release? Who gets alerted?", "A memory limit makes the system kill a leaking process. Is that good or bad here?"], principal: ["Restarting servers on a timer hides the symptom. How do you stop teams living with fixes like that?", "What should the incident review produce so a leak like this is caught before release next time?"],
     name: "Memory Leak", duration: 110, cap: 45,
     blurb: "Servers slowly choke, then all restart at once.",
+    story: "The new version keeps a little more memory every second, like a sink that drains slower than the tap fills it. It looks fine for a while, then servers fall over. If you have seen a browser tab or mobile app get slower the longer it stays open, you have seen a leak.",
     brief: "Version 3.0 goes out at 0:15. It keeps a little more memory every second and never gives it back. When a server runs out, the system kills it (OOMKilled) and it restarts.",
     task: "Find the real cause and stop the restarts.",
     given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "canary"], fresh: [],
@@ -591,6 +597,7 @@ const LEVELS = [
   { id: "failover", watch: "The database machine has disk warnings. What happens to your site if it dies?", staff: ["The standby takes over in seconds, but the app must reconnect. What in your app makes that fast or slow?", "When did you last test a failover for real? An untested standby is a hope, not a plan."], principal: ["How long can the business be down, and how much data can it lose? Who decides, and what does each step cost?", "Should you run planned failure tests in production?"],
     name: "Failover Night", duration: 100, cap: 52,
     blurb: "The main database dies.",
+    story: "The main database machine dies. Like a shop whose only till breaks: without a spare ready, nobody can pay until it is fixed. The spare (a standby) is a copy kept up to date in another building, ready to take over.",
     brief: "The primary database host has shown disk warnings all week. If it dies with no standby, restoring from backup takes about 40 seconds, and every write fails until then.",
     task: "Be ready before it happens.",
     given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "standby"], fresh: ["standby"],
@@ -603,6 +610,7 @@ const LEVELS = [
   { id: "zone", watch: "Each server sits in zone A or zone B (see its tag); a zone is a separate building. Zone A loses power at 0:40.", staff: ["Spare capacity in both zones costs money. What is the cheapest setup that still survives losing a zone?", "Sometimes a whole region fails. When is a second region worth it?"], principal: ["Which systems must survive a whole region going down, and which can wait?", "How do you keep that list current as the business changes?"],
     name: "Zone Outage", duration: 100, cap: 50,
     blurb: "Half your servers vanish at once.",
+    story: "A whole data-centre building loses power and half your servers go with it. Like a business with two branches where one floods: the other must serve every customer. Cloud regions are split into these buildings (zones) for exactly this reason.",
     brief: "AWS regions are split into zones, separate buildings with their own power. Your servers alternate between zone A and zone B (see the A/B tag). Today zone A has power problems.",
     task: "Survive losing a whole zone for 40 seconds.",
     given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica"], fresh: [],
@@ -614,6 +622,7 @@ const LEVELS = [
   { id: "partner", watch: "6% of visits call an outside payment service. At 0:30 it gets very slow.", staff: ["What is the right timeout? Too short fails good calls; too long ties up servers.", "Retries can make a struggling partner worse. How do waiting longer between retries, plus a little randomness, help?"], principal: ["What does the partner promise you, and what do you promise your own customers on top of it?", "Should a critical partner have a backup provider? What does that cost to keep ready?"],
     name: "Slow Partner", duration: 100, cap: 45,
     blurb: "The payment provider hangs.",
+    story: "Your site calls someone else's service (payments) and it gets slow. Like a cashier stuck waiting on a card machine that hangs: the whole line stops. Any app that calls an outside API (maps, payments, login) can get stuck this way without a timeout.",
     brief: "6% of requests call an outside payment API. At 0:30 it starts taking 8 seconds to answer. Every app server waits on those calls, and the waiting fills them up.",
     task: "Do not let someone else's outage become yours.",
     given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "queue", "worker", "breaker"], fresh: ["breaker"],
@@ -623,9 +632,68 @@ const LEVELS = [
               "A circuit breaker stops calling a failing service for a while, so requests fail fast.",
               "Failing fast still fails. Put the payments in a queue and retry later, and users see 'payment processing' instead of an error.",
               "Hands-on: add a timeout and retries with backoff to an HTTP call, and send failures to a queue."] },
+  { id: "viral", watch: "Most of today's rush is people loading the same images and video files. Keep an eye on the App servers column.", staff: ["How long should the CDN keep a file, and what happens when you change the image but keep the same name?", "The CDN takes the files, the autoscaler takes the rest. Which do you add first, and why?"], principal: ["Editorial wants to go viral; engineering pays for it. How do teams agree on how big a spike to plan for?", "When is paying for a CDN all year cheaper than paying for servers on the one big day?"],
+    name: "Viral Video", duration: 100, cap: 40,
+    blurb: "A homepage video is shared everywhere.",
+    story: "A video on your homepage gets shared everywhere. Most of the rush is people downloading the same images and video thumbnails. Like a newspaper that suddenly needs a million copies of one page: print them at local presses (a CDN) instead of at head office.",
+    brief: "A news site with about 260 readers a second. At 0:20 a video on the homepage goes viral: traffic jumps about five times, and most of the new requests are images and video thumbnails that never change.",
+    task: "Keep pages loading while the video goes viral.",
+    given: ["lb", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "cdn"], fresh: [],
+    traffic: t => T({ legit: 260 + wave(t, 20, 82, 950, 6), staticFrac: ramp(t, 15, 30, 0.2, 0.65), readFrac: 0.92 }),
+    events: [{ t: 8, kind: "info", text: "Social team: our homepage video is trending. Expect a rush soon.", prep: ["cdn"], keys: ["static"] }, { t: 20, kind: "page", text: "The video went viral. Most new requests are images and thumbnails." }],
+    learned: ["When a spike is mostly the same files, a CDN serves them from near the user and your servers barely notice.",
+              "Add the CDN before the rush; an autoscaler then only has to handle the pages that really change.",
+              "Hands-on: put CloudFront in front of an S3 bucket of images and compare load times from two countries."] },
+  { id: "payday", watch: "Payments do slow work and call an outside payment network. At 0:50 that network slows down.", staff: ["A payment must not run twice. How do you make a queued payment safe to retry?", "What does the user see while a payment waits in the queue, and when do you tell them it failed?"], principal: ["Payday load is known months ahead. Who owns preparing for it: the product team, the platform team, or both?", "What do you promise customers about payment speed, and what does the payment network promise you?"],
+    name: "Payday Rush", duration: 110, cap: 50,
+    blurb: "Salary day: everyone pays bills at once.",
+    story: "On salary day everyone opens the banking app to pay bills at once. Each payment does slow work and calls an outside payment network, and then that network slows down. Like a bank branch on payday: you need more counters, a “we will process this shortly” slip (a queue), and a rule to stop waiting on a broken card machine (a circuit breaker).",
+    brief: "A small bank's app. At 0:20 salaries land and bill payments pour in. Each payment does slow work while the user waits, and 8% of requests call an outside payment network. At 0:50 that network slows to 8 seconds per call, and a server crashes later.",
+    task: "Keep payments flowing through the rush and the slowdown.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "queue", "worker", "breaker"], fresh: [],
+    traffic: t => T({ legit: ramp(t, 15, 40, 220, 340), readFrac: 0.75, heavyFrac: t > 20 && t < 95 ? 0.15 : 0.03, payFrac: 0.08 }),
+    events: [{ t: 20, kind: "page", text: "Salaries just landed. Bill payments are pouring in." },
+             { t: 38, kind: "info", text: "The payment network's status page says 'degraded performance'.", prep: ["breaker"], keys: ["partner"] },
+             { t: 50, kind: "partner-slow", text: "The payment network now takes 8 seconds to answer." },
+             { t: 78, kind: "crash", text: "An app server crashed." }],
+    learned: ["Writes such as payments cannot be cached away. Move the slow part to a queue and answer the user at once.",
+              "A circuit breaker stops a slow partner from tying up every server, so the rest of the app keeps working.",
+              "Known peaks (payday, tax day, month end) are the easiest to prepare for. Scale up before, not during.",
+              "Hands-on: make a queue consumer idempotent (safe to run twice) with a unique payment ID."] },
+  { id: "storm", watch: "Two things will fail tonight, one after the other. Watch the warnings.", staff: ["After the zone outage you are running on half your servers. What else is now one failure away from an outage?", "How do you test two failures at once without breaking production?"], principal: ["Teams plan for one failure at a time. How do you decide which double failures are worth paying to survive?", "Who decides when to stop fixing and start telling customers?"],
+    name: "Storm Night", duration: 110, cap: 62,
+    blurb: "A zone goes down, then the database dies.",
+    story: "A storm knocks out one data-centre building, and the power cut damages the database disk too. Two failures in one night is normal in real outages. Like a shop that loses its back room and then its till: plan for one failure, and a second one is just your plan running twice.",
+    brief: "Servers alternate between zone A and zone B (see the A/B tag). A storm is heading for zone A tonight, and the database host has been shaky. Expect to lose a zone, and maybe more.",
+    task: "Survive a zone outage and a database failure in one shift.",
+    given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "replica", "standby"], fresh: [],
+    traffic: t => T({ legit: ramp(t, 0, 40, 300, 380), readFrac: 0.82 }),
+    events: [{ t: 10, kind: "info", text: "Weather alert: a storm is heading for the zone A data centre.", prep: ["app"], spare: 2, keys: ["azdown"] },
+             { t: 35, kind: "az-fail", text: "Zone A is down." },
+             { t: 55, kind: "info", text: "Disk errors on the database host since the power cut.", prep: ["standby"], keys: ["dbdown"] },
+             { t: 75, kind: "db-fail", text: "The primary database host died." }],
+    learned: ["Failures cluster: one problem often causes the next. Plan for the second one while fixing the first.",
+              "Spare servers in both zones and a standby database are the two cheapest insurances against a bad night.",
+              "Hands-on: run a game day: turn off one zone's servers in a test account and fail over the database while load runs."] },
+  { id: "release", watch: "A release at 0:15, a bot wave at 0:45 and a hotfix at 1:25. Roll back first, then fix.", staff: ["Two problems at once: which do you fix first, and how do you tell which one is hurting you?", "Should a hotfix skip the canary because it is urgent? What could go wrong?"], principal: ["Release weeks often collide with other events. How do you plan release calendars across teams?", "What would make 'roll back first' the automatic habit on every team?"],
+    name: "Release Week", duration: 115, cap: 52,
+    blurb: "A leaky release, a bot wave and a rushed hotfix.",
+    story: "A busy release week: a new version slowly leaks memory, a scraper bot shows up, then a rushed hotfix breaks checkout. Real on-call nights are a mix like this. Like a restaurant changing its menu on the night a coach party arrives: undo the change first, then deal with the crowd.",
+    brief: "Version 6.0 goes out at 0:15. At 0:45 a scraper bot arrives. At 1:25 a developer pushes a rushed hotfix, 6.0.1. A red Roll back button appears at the top when a release goes bad.",
+    task: "Keep errors low through two releases and a bot wave.",
+    given: ["lb", "app", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "canary", "waf", "cdn"], fresh: [],
+    traffic: t => T({ legit: ramp(t, 0, 60, 280, 330), bots: wave(t, 45, 80, 1800, 3), staticFrac: 0.2 }),
+    events: [{ t: 15, kind: "deploy-leak", text: "Version 6.0 is out." },
+             { t: 46, kind: "page", text: "Requests up 600% from a handful of IP addresses. Sign-ups flat." },
+             { t: 85, kind: "deploy-bug", text: "Hotfix 6.0.1 is out." }],
+    learned: ["When several things go wrong, undo your own change first: it is the fastest fix you control.",
+              "A rate limiter handles the bots while you deal with the release; one part per problem.",
+              "Urgent hotfixes still deserve a canary. Rushed changes are the ones most likely to break.",
+              "Hands-on: practise a two-problem drill: roll back a deployment while a load tool floods a test endpoint."] },
   { id: "friday", watch: "Everything happens today. Build a solid setup before you press Start.", staff: ["Which part removed the most load per dollar today? Which would you cut first if the budget halved?", "What would you test before next Black Friday, and how?"], principal: ["How do you plan capacity for the busiest day of the year across many teams?", "What would make next year's Black Friday a boring day?"],
     name: "Black Friday", duration: 150, cap: 70,
     blurb: "Everything at once. Start from almost nothing.",
+    story: "The busiest day of the year: crowds, bots, slow orders and crashes, all at once. It is every earlier shift combined, the way real incidents tend to pile up.",
     brief: "The biggest day of the year. You start with one app server and the database. Expect static-heavy traffic, checkouts, a bot wave, crashes and a huge spike near the end.",
     task: "Use everything you learned. Keep the error budget above zero for 2:30.",
     given: ["app", "db"], tray: ["app", "lb", "auto", "cache", "replica", "cdn", "waf", "queue", "worker"], fresh: [],
@@ -2267,6 +2335,7 @@ function showBrief() {
     <div class="kick">Shift ${LEVELS.indexOf(L) + 1} of ${LEVELS.length} · ${Math.floor(L.duration / 60)}:${String(L.duration % 60).padStart(2, "0")} long · spend limit $${L.cap}/h</div>
     <h2>${L.name}</h2>
     <p>${L.brief}</p>
+    ${L.story ? `<p class="real"><b>In everyday terms:</b> ${L.story}</p>` : ""}
     <p><b>${L.task}</b></p>
     ${fresh.length ? `<div class="label" style="margin-top:14px">New parts in your tray</div>
       <ul>${fresh.map(p => `<li><b>${p.name}</b> ($${p.cost}/h, ${p.boot}s to start). ${p.what} <span class="real">In real life: <b>${p.real}</b>.</span></li>`).join("")}</ul>` : ""}
@@ -2301,8 +2370,8 @@ function showMenu() {
   openSheet(`
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
-    ${store.get("loadrush-new-1", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>Help that pauses and explains when health falls · tonight's <b>On call</b> shift with a handover note, decisions and an incident report · click any part on the board to learn when it is the wrong fix · your <b>learning path</b> of 13 skills · a quick question after each shift.</span>
+    ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
+      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
@@ -2332,7 +2401,7 @@ function showMenu() {
   $("#rescueSw").onchange = e => { rescueOn = e.target.checked; store.set("loadrush-rescue", rescueOn); };
   $("#presentSw").onchange = e => setPresent(e.target.checked);
   if ($("#bGuide")) $("#bGuide").onclick = () => boardGuide(true);
-  if ($("#bNewOk")) $("#bNewOk").onclick = () => { store.set("loadrush-new-1", true); $("#whatsNew").remove(); };
+  if ($("#bNewOk")) $("#bNewOk").onclick = () => { store.set("loadrush-new-2", true); $("#whatsNew").remove(); };
   if ($("#bResume")) $("#bResume").onclick = () => resumeGame(store.get("loadrush-game", null));
   $("#bCopyProg").onclick = copyProgress;
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };

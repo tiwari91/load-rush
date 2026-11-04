@@ -17,7 +17,13 @@ Requests flow through your system as moving dots. Drag parts onto the board (loa
 7. Failover Night: the main database dies
 8. Zone Outage: half the servers vanish
 9. Slow Partner: an outside payment API hangs
-10. Black Friday: everything at once
+10. Viral Video: a homepage video is shared everywhere, mostly images
+11. Payday Rush: salary day payments, then the payment network slows
+12. Storm Night: a zone goes down, then the database dies
+13. Release Week: a leaky release, a bot wave and a rushed hotfix
+14. Black Friday: everything at once
+
+Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 
 There is also a Sandbox with traffic sliders, buttons to break things on purpose, and six guided experiments (load balancer, cache, bot flood, CDN, queue, safe database failover), each ticked off when you reach its goal.
 
