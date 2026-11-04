@@ -17,6 +17,8 @@
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
 .lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}
+.msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
+.msec .levels{margin-top:6px}
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -2644,21 +2646,25 @@ function showMenu() {
       <span>4 new shifts · everyday explanations on every shift · a <b>Parts guide</b> and a <b>quiz</b> for beginners · new On call incidents and decisions · 2 new Sandbox experiments.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
-    <div class="starthere"><b>New to DevOps? Start here</b>
-      <ol><li><button class="linkbtn" data-start="tour">Tutorial</button> (1 minute)</li>
-        <li><button class="linkbtn" data-start="guide">Parts guide</button>: what each part does</li>
-        <li><button class="linkbtn" data-start="quiz">Quiz</button>: which part fixes this?${store.get("loadrush-quiz-best", 0) ? ` (best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length})` : ""}</li>
-        <li>Shifts 1 to 3, then the <button class="linkbtn" data-start="sandbox">Sandbox</button> experiments</li></ol></div>
-    <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
+    <div class="msec"><h3>Learn the basics <small>new to DevOps? start here, then Shift 1</small></h3>
+    <div class="levels">
+      <button class="lv sand" data-i="tour"><span class="n">1 minute</span><span class="t">Tutorial</span><span class="d">A guided start on the first shift.</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="guide"><span class="n">Read</span><span class="t">Parts guide</span><span class="d">What each part does: everyday comparison, real config, try-it-yourself lab.</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="quiz"><span class="n">8 questions</span><span class="t">Quiz</span><span class="d">Which part fixes this?</span><span class="s">${store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "&nbsp;"}</span></button>
+    </div></div>
+    <div class="msec"><h3>Play</h3>
+    <div class="levels">${oncallCard()}
+      <button class="lv sand" data-i="practice"><span class="n">Unlimited</span><span class="t">Practice on call</span><span class="d">A random company and random incidents, as often as you like.</span>${bestOf("practice")}</button>
+      <button class="lv sand" data-i="sandbox"><span class="n">Free play · ${EXPERIMENTS.length} experiments</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
+    </div></div>
+    ${[[0, 4, "Shifts: traffic basics", "one problem each: crowds, repeated reads, bots, slow work"], [4, 9, "Shifts: releases and failures", "bad releases, leaks, dead databases, lost zones, slow partners"], [9, LEVELS.length, "Shifts: big days", "several problems in one shift"]].map(([from, to, title, sub]) => `
+    <div class="msec"><h3>${title} <small>${sub}</small></h3>
+    <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k; return `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
         <span class="n">Shift ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
         <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(stars[lv.id] || 0)}${"☆".repeat(3 - (stars[lv.id] || 0))}</span>${bestOf(lv.id)}
-      </button>`).join("")}
-      <button class="lv sand" data-i="tour"><span class="n">New here?</span><span class="t">Tutorial</span><span class="d">A 1-minute guided start.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="guide"><span class="n">Beginners</span><span class="t">Parts guide</span><span class="d">What each part does, with an everyday comparison and a real example.</span><span class="s">&nbsp;</span></button>
-      <button class="lv sand" data-i="practice"><span class="n">Unlimited</span><span class="t">Practice on call</span><span class="d">A random company and random incidents, as often as you like.</span>${bestOf("practice")}</button>
-      <button class="lv sand" data-i="sandbox"><span class="n">Free play</span><span class="t">Sandbox</span><span class="d">${SANDBOX.blurb}</span><span class="s">&nbsp;</span></button>
-    </div>
+      </button>`; }).join("")}
+    </div></div>`).join("")}
     ${skillsHtml()}
     <details class="more" style="margin-top:16px"><summary>Settings: level, teach mode, big text</summary>
       <div class="roles">${Object.entries(ROLES).map(([k, r]) => `<button class="role ${k === role ? "on" : ""}" data-role="${k}"><b>${r.name}</b><span>${r.desc}</span></button>`).join("")}</div>
@@ -2690,6 +2696,7 @@ function showMenu() {
   };
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "guide") { showGuide(true); return; }
+    if (b.dataset.i === "quiz") { showQuiz(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }
