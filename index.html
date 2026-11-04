@@ -10,6 +10,10 @@
 .gcard p{margin:6px 0;font-size:14px;line-height:1.45}
 .gh{display:flex;align-items:center;gap:8px;margin-bottom:4px}
 .gh .gz{margin-left:auto;font-size:12px;opacity:.7}
+.starthere{margin:10px 0 12px;padding:10px 14px;border:1px solid var(--line-2,#444);border-radius:10px;font-size:14px}
+.starthere ol{margin:6px 0 0 18px;padding:0}.starthere li{margin:3px 0}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent,#f5c04a);font:inherit;text-decoration:underline;cursor:pointer}
+.choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -2232,10 +2236,59 @@ function showGuide(fromMenu) {
         <p><b>Use it when:</b> ${g.use}</p>
         ${WRONG_FIX[t] ? `<p><b>Not the fix when:</b> ${WRONG_FIX[t]}</p>` : ""}
         <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p></div>`; }).join("")}</div>
-    <div class="acts">${fromMenu ? `<button class="btn go" id="bGuideMenu">Back to the menu</button>` : `<button class="btn go" id="bGuideClose">Back to the game</button>`}</div>`, closeSheet);
+    <div class="acts">${fromMenu ? `<button class="btn go" id="bGuideMenu">Back to the menu</button>` : `<button class="btn go" id="bGuideClose">Back to the game</button>`}<button class="btn" id="bGuideQuiz">Quiz: which part fixes this?</button></div>`, closeSheet);
+  $("#bGuideQuiz").onclick = () => showQuiz(fromMenu);
   if ($("#bGuideMenu")) $("#bGuideMenu").onclick = showMenu;
   if ($("#bGuideClose")) $("#bGuideClose").onclick = closeSheet;
   track("guide", fromMenu ? "menu" : "game");
+}
+/* "Which part fixes this?": short scenarios with one right part each, for beginners. */
+const QUIZ = [
+  { q: "Your product page loads in 3 seconds on sale day. The database is 98% busy, and almost every request reads the same 20 products.", a: "cache", opts: ["cache", "app", "standby"],
+    why: "Repeated reads of the same data are what a cache is for. More app servers would still all hit the busy database." },
+  { q: "Traffic is up 800% but sign-ups are flat, and almost all of it comes from 40 IP addresses.", a: "waf", opts: ["auto", "waf", "cdn"],
+    why: "It is bots, not customers. A rate limiter blocks them at the edge; an autoscaler would just buy servers for the bots." },
+  { q: "Every checkout waits 4 seconds while the server sends emails and builds a PDF receipt.", a: "queue", opts: ["replica", "queue", "lb"],
+    why: "Move the slow work to a queue (with workers) and answer the customer at once." },
+  { q: "You added two more app servers but they get no traffic. Only the first server is busy.", a: "lb", opts: ["lb", "auto", "canary"],
+    why: "Without a load balancer, nothing spreads requests across the servers." },
+  { q: "The payment provider takes 8 seconds to answer, and soon every app server is stuck waiting.", a: "breaker", opts: ["breaker", "app", "cache"],
+    why: "A timeout and circuit breaker stop waiting and fail fast, so your servers stay free for everyone else." },
+  { q: "Half of all requests are images and CSS files that are the same for every visitor.", a: "cdn", opts: ["cache", "cdn", "replica"],
+    why: "A CDN serves files that never change from near the user, so they never reach your app." },
+  { q: "Each release has a 1-in-10 chance of breaking checkout, and you release every day.", a: "canary", opts: ["canary", "standby", "waf"],
+    why: "A canary sends the new version to about 10% of users first and rolls back if errors jump." },
+  { q: "The database host has shown disk warnings all week. If it dies, a restore from backup takes 40 seconds.", a: "standby", opts: ["replica", "standby", "cache"],
+    why: "A standby copy takes over in seconds. Replicas only help reads; writes still need a primary." },
+];
+function showQuiz(fromMenu) {
+  if (S) setRunning(false);
+  let i = 0, score = 0;
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const ask = () => {
+    const x = QUIZ[i];
+    openSheet(`<div class="kick">Which part fixes this? · ${i + 1} of ${QUIZ.length}</div><h2>${x.q}</h2>
+      <div class="choices">${x.opts.map(t => `<button class="choice" data-t="${t}">${PARTS[t].name}</button>`).join("")}</div>
+      <div id="quizWhy"></div>`, back);
+    for (const b of document.querySelectorAll(".choice[data-t]")) b.onclick = () => {
+      const ok = b.dataset.t === x.a; if (ok) score++;
+      for (const c of document.querySelectorAll(".choice[data-t]")) { c.disabled = true; if (c.dataset.t === x.a) c.classList.add("right"); }
+      if (!ok) b.classList.add("wrong");
+      $("#quizWhy").innerHTML = `<p><b>${ok ? "Right." : "Not quite: it is the " + PARTS[x.a].name + "."}</b> ${x.why}</p>
+        <p class="real">Everyday: ${PART_GUIDE[x.a].everyday}</p>
+        <div class="acts"><button class="btn go" id="bQuizNext">${i + 1 < QUIZ.length ? "Next question" : "See my score"}</button></div>`;
+      $("#bQuizNext").onclick = () => { i++; i < QUIZ.length ? ask() : done(); };
+    };
+  };
+  const done = () => {
+    const best = Math.max(score, store.get("loadrush-quiz-best", 0)); store.set("loadrush-quiz-best", best);
+    track("quiz", String(score));
+    openSheet(`<div class="kick">Which part fixes this?</div><h2>${score} of ${QUIZ.length} right</h2>
+      <p>${score === QUIZ.length ? "All right. You know what each part is for; now try the shifts." : "Each wrong answer is a part worth reading about in the Parts guide, then trying in the shift that teaches it."}</p>
+      <div class="acts"><button class="btn go" id="bQuizGuide">Open the Parts guide</button><button class="btn" id="bQuizAgain">Try again</button><button class="btn" id="bQuizBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back);
+    $("#bQuizGuide").onclick = () => showGuide(fromMenu); $("#bQuizAgain").onclick = () => showQuiz(fromMenu); $("#bQuizBack").onclick = back;
+  };
+  ask();
 }
 function showWords() {
   if (S) setRunning(false);
@@ -2481,9 +2534,14 @@ function showMenu() {
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
     ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b> · new <b>Parts guide</b> on the menu: what each part does, with an everyday comparison and a real example · two new On call decisions (switch the cache off? run a partner import now?) and more beginner words · two new Sandbox experiments: lose a zone, and let a canary catch a bad release.</span>
+      <span>4 new shifts · everyday explanations on every shift · a <b>Parts guide</b> and a <b>quiz</b> for beginners · new On call incidents and decisions · 2 new Sandbox experiments.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
+    <div class="starthere"><b>New to DevOps? Start here</b>
+      <ol><li><button class="linkbtn" data-start="tour">Tutorial</button> (1 minute)</li>
+        <li><button class="linkbtn" data-start="guide">Parts guide</button>: what each part does</li>
+        <li><button class="linkbtn" data-start="quiz">Quiz</button>: which part fixes this?${store.get("loadrush-quiz-best", 0) ? ` (best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length})` : ""}</li>
+        <li>Shifts 1 to 3, then the <button class="linkbtn" data-start="sandbox">Sandbox</button> experiments</li></ol></div>
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
       <button class="lv" data-i="${i}" ${unlocked(i) ? "" : "disabled"}>
         <span class="n">Shift ${i + 1}${unlocked(i) ? "" : " · locked"}</span><span class="t">${lv.name}</span>
@@ -2518,6 +2576,11 @@ function showMenu() {
   $("#bLoadProg").onclick = () => { const b = $("#progCode"); if (b.hidden) { b.hidden = false; b.value = ""; b.focus(); $("#progMsg").textContent = "Paste your code, then press Load progress again."; } else loadProgress(); };
   for (const b of document.querySelectorAll(".role")) b.onclick = () => { role = b.dataset.role; store.set("loadrush-role", role); document.querySelectorAll(".role").forEach(x => x.classList.toggle("on", x === b)); };
   for (const b of document.querySelectorAll(".sk.go")) b.onclick = () => load(LEVELS.find(l => l.id === b.dataset.lv));
+  for (const b of document.querySelectorAll("[data-start]")) b.onclick = () => {
+    const k = b.dataset.start; track("start-here", k);
+    if (k === "guide") showGuide(true); else if (k === "quiz") showQuiz(true);
+    else if (k === "tour") { wantTour = true; load(LEVELS[0]); } else load(SANDBOX);
+  };
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "guide") { showGuide(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
