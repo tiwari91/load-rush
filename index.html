@@ -16,7 +16,7 @@
 .choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
-.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.wfind{width:100%;box-sizing:border-box;margin:4px 0 10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line-2,#555);background:rgba(0,0,0,.3);color:inherit;font:inherit}.writeup textarea{width:100%;box-sizing:border-box;margin-top:6px;background:rgba(0,0,0,.3);color:inherit;border:1px solid var(--line-2,#555);border-radius:8px;padding:8px;font:inherit;font-size:13px}.costmedal{margin:10px 0;padding:8px 12px;border:1px dashed var(--line-2,#555);border-radius:8px;font-size:13px}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
+.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.gbuild{margin-top:8px;font-size:13px;text-align:left}.wfind{width:100%;box-sizing:border-box;margin:4px 0 10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line-2,#555);background:rgba(0,0,0,.3);color:inherit;font:inherit}.writeup textarea{width:100%;box-sizing:border-box;margin-top:6px;background:rgba(0,0,0,.3);color:inherit;border:1px solid var(--line-2,#555);border-radius:8px;padding:8px;font:inherit;font-size:13px}.costmedal{margin:10px 0;padding:8px 12px;border:1px dashed var(--line-2,#555);border-radius:8px;font-size:13px}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
 .rgraph{width:100%;height:auto;background:rgba(0,0,0,.25);border-radius:8px;margin-top:6px}.rkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0}.rkey i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
@@ -2381,13 +2381,14 @@ function showGuide(fromMenu) {
         <p><b>Example:</b> ${g.example}</p>
         <p><b>Use it when:</b> ${g.use}</p>
         ${WRONG_FIX[t] ? `<p><b>Not the fix when:</b> ${WRONG_FIX[t]}</p>` : ""}
-        <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p>${snippetHtml(t)}${labHtml(t)}</div>`; }).join("")}${EXTRA_GUIDE.map(g => `
+        <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p>${snippetHtml(t)}${labHtml(t)}${BUILDS.filter(b => b.part === t).map(b => `<button class="linkbtn gbuild" data-gb="${b.id}">Practise the AWS setup: ${b.name} →</button>`).join("<br>")}</div>`; }).join("")}${EXTRA_GUIDE.map(g => `
       <div class="gcard"><div class="gh"><span class="tag">${g.tag}</span><b>${g.name}</b><span class="gz">${g.zone}</span></div>
         <p>${g.what}</p><p><b>Everyday:</b> ${g.everyday}</p><p><b>Example:</b> ${g.example}</p><p><b>Use it when:</b> ${g.use}</p>
         <p class="real">In real life: ${g.real}.</p><details class="snip"><summary>Try it yourself: ${g.lab[0]}</summary><ol class="lab">${g.lab[1].map(x => `<li>${escHtml(x)}</li>`).join("")}</ol></details></div>`).join("")}</div>
     <div class="acts">${fromMenu ? `<button class="btn go" id="bGuideMenu">Back to the menu</button>` : `<button class="btn go" id="bGuideClose">Back to the game</button>`}<button class="btn" id="bGuideQuiz">Quiz: which part fixes this?</button></div>`, closeSheet);
   $("#bGuideQuiz").onclick = () => showQuiz(fromMenu);
   if ($("#bGuideMenu")) $("#bGuideMenu").onclick = showMenu;
+  for (const el of document.querySelectorAll("[data-gb]")) el.onclick = () => playBuild(BUILDS.find(b => b.id === el.dataset.gb), fromMenu);
   if ($("#bGuideClose")) $("#bGuideClose").onclick = closeSheet;
   track("guide", fromMenu ? "menu" : "game");
 }
@@ -2876,7 +2877,8 @@ function showMenu() {
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     ${challenge ? `<div class="whatsnew"><b>A challenge for you</b><span>A friend scored <b>${challenge.sc} points</b> on <b>${challenge.lv.name}</b>. Can you beat it?</span><button class="btn go" id="bChallenge">Play ${challenge.lv.name}</button></div>` : ""}
-    <div class="msec"><h3>Learn the basics <small>new to DevOps? start here, then Shift 1</small></h3>
+    <div class="msec"><h3>Learn the basics <small>new to DevOps? start here, then Shift 1${(() => { const b = Object.keys(store.get("loadrush-build", {})).length, e = Object.keys(store.get("loadrush-exp", {})).length, q = store.get("loadrush-quiz-best", 0), g = store.get("loadrush-graphs-best", 0);
+      return b || e || q || g ? ` · your progress: quiz ${q}/${QUIZ.length} · graphs ${g}/${GRAPHS.length} · AWS builds ${b}/${BUILDS.length} · experiments ${e}/${EXPERIMENTS.length}` : ""; })()}</small></h3>
     <div class="levels">
       <button class="lv sand" data-i="tour"><span class="n">1 minute</span><span class="t">Tutorial</span><span class="d">A guided start on the first shift.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="guide"><span class="n">Read</span><span class="t">Parts guide</span><span class="d">What each part does: everyday comparison, real config, try-it-yourself lab.</span><span class="s">&nbsp;</span></button>
