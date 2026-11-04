@@ -2629,6 +2629,25 @@ function showGraphs(fromMenu) {
   };
   ask();
 }
+/* Interview practice: the staff and principal questions from every shift, one at a time, with the points a good answer covers. */
+function showInterview(fromMenu) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const all = LEVELS.flatMap(lv => [...(lv.staff || []).map(q => ({ q, lv, lvl: "Senior" })), ...(lv.principal || []).map(q => ({ q, lv, lvl: "Staff / principal" }))]);
+  let i = Math.floor(Math.random() * all.length);
+  const ask = () => {
+    const x = all[i];
+    openSheet(`<div class="kick">Interview practice · ${x.lvl} level · from ${x.lv.name}</div><h2>${x.q}</h2>
+      <p class="real">Answer out loud or write it down first, in 1 to 2 minutes. Then open the points below.</p>
+      <details class="snip"><summary>Points a good answer covers</summary><ul class="lab">${x.lv.learned.filter(t => !/^Hands-on/.test(t)).map(t => `<li>${t}</li>`).join("")}</ul>
+        <p class="real">Strong answers also name a trade-off (cost, speed, risk), give a number, and say how you would know it worked.</p></details>
+      <div class="acts"><button class="btn go" id="bIvNext">Another question</button><button class="btn" id="bIvShift">Play ${x.lv.name}</button><button class="btn" id="bIvBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back);
+    $("#bIvNext").onclick = () => { i = (i + 1 + Math.floor(Math.random() * (all.length - 1))) % all.length; track("interview", "next"); ask(); };
+    $("#bIvShift").onclick = () => load(x.lv);
+    $("#bIvBack").onclick = back;
+  };
+  ask();
+}
 function showWords() {
   if (S) setRunning(false);
   openSheet(`<div class="kick">Words</div><h2>What the words mean</h2>
@@ -2913,6 +2932,7 @@ function showMenu() {
       <button class="lv sand" data-i="guide"><span class="n">Read</span><span class="t">Parts guide</span><span class="d">What each part does: everyday comparison, real config, try-it-yourself lab.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="build"><span class="n">${BUILDS.length} AWS services</span><span class="t">AWS Builder</span><span class="d">Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="graphs"><span class="n">${GRAPHS.length} dashboards</span><span class="t">Read the graph</span><span class="d">Look at the lines and name the incident.</span><span class="s">${store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "&nbsp;"}</span></button>
+      <button class="lv sand" data-i="interview"><span class="n">Job prep</span><span class="t">Interview practice</span><span class="d">Senior and staff-level questions from every shift, with the points a good answer covers.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="quiz"><span class="n">8 questions</span><span class="t">Quiz</span><span class="d">Which part fixes this?</span><span class="s">${store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "&nbsp;"}</span></button>
     </div></div>
     <div class="msec"><h3>Play</h3>
@@ -2963,6 +2983,7 @@ function showMenu() {
     if (b.dataset.i === "quiz") { showQuiz(true); return; }
     if (b.dataset.i === "build") { showBuilder(true); return; }
     if (b.dataset.i === "graphs") { showGraphs(true); return; }
+    if (b.dataset.i === "interview") { showInterview(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }

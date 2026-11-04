@@ -48,6 +48,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Write-up practice:** after an On call shift, write the 3-line incident summary yourself, then compare it with a model answer built from your shift.
 - **Challenge a friend:** after winning a shift, copy a link with your score; whoever opens it sees the challenge on the menu.
 - **It really happened:** seven shift briefs link a real outage with the same lesson and the company's own write-up (Slack 2021, Cloudflare 2019, Facebook 2021, GitHub 2018, Amazon S3 2017, AWS us-east-1 2021, Fastly 2021).
+- **Interview practice:** senior and staff-level questions from every shift, one at a time, with the points a good answer covers.
 - **Quiz: which part fixes this?** Eight short scenarios; each answer explains why and gives the everyday comparison.
 
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.
