@@ -30,7 +30,7 @@ There is also a Sandbox with traffic sliders, buttons to break things on purpose
 ## On call (a new shift every day)
 
 The top of the menu has **tonight's on-call shift**: a made-up company, 3 incidents (4 at weekends) drawn from
-the game's own problems, and the same shift for everyone on the same day. A **handover note** announces some
+the game's own problems (now including a surprise server crash), and the same shift for everyone on the same day. A **handover note** announces some
 incidents; others are a surprise. Halfway through, someone asks you for a **decision** (send the marketing email
 now? cut the budget? release a fix mid-shift?). Afterwards you get **points**, an **incident report** (what
 happened, what it cost, how you handled it, the lesson, and the real-world tools), your streak, and a result

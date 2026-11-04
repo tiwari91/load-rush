@@ -736,6 +736,7 @@ const ONCALL = {
     page: "Traffic just jumped. Most new visitors are reading the same few pages.",
     traffic: (t, at, k) => ({ legit: wave(t, at, at + 34, 260 + 200 * k, 5) }),
     lesson: "Scale out before a known peak (servers take seconds to start), and put a cache in front of reads that repeat.",
+    everyday: "Like a shop where a celebrity just posted about you: open more tills before the crowd arrives, and keep popular items ready at the front (a cache).",
     real: "AWS Auto Scaling, Kubernetes HPA, ElastiCache" },
   bots: { title: "Bot flood", keys: ["bots"], parts: ["waf"],
     forecast: at => "Security: a price-scraping bot was seen on other shops tonight. It may reach you.",
@@ -743,6 +744,7 @@ const ONCALL = {
     page: "Requests per second up 800%. Sign-ups flat. Almost all of it comes from a few IP addresses.",
     traffic: (t, at, k) => ({ bots: wave(t, at, at + 40, 1500 + 700 * k, 3) }),
     lesson: "Block abusive clients at the edge with a rate limit, before they cost you servers.",
+    everyday: "Like a crowd of people asking staff the same question over and over: turn the time-wasters away at the door (a rate limit) so real customers get served.",
     real: "AWS WAF rate-based rules, Cloudflare, nginx limit_req" },
   images: { title: "Image-heavy traffic", keys: ["static"], parts: ["cdn"],
     forecast: at => `A new photo gallery goes live at about ${clockText(at)}. Lots of big images.`,
@@ -750,6 +752,7 @@ const ONCALL = {
     page: "Half of all requests are now images, CSS and scripts.",
     traffic: (t, at, k) => ({ staticFrac: t > at ? 0.55 : 0, legit: wave(t, at, 999, 80, 4) }),
     lesson: "Files that never change (images, CSS, JS) should come from a CDN near the user, not from your app.",
+    everyday: "Like a newspaper suddenly needing a million copies of one photo: print them at local presses (a CDN), not at head office.",
     real: "CloudFront, Cloudflare, Fastly" },
   checkout: { title: "Slow work during orders", keys: ["heavy", "qnow", "qbig"], parts: ["queue", "worker"],
     forecast: at => `A promotion starts at about ${clockText(at)}: many orders, and each sends emails and a receipt.`,
@@ -757,31 +760,43 @@ const ONCALL = {
     page: "Orders are flooding in. Each one does slow work (emails, receipts) while the customer waits.",
     traffic: (t, at, k) => ({ heavyFrac: t > at && t < at + 60 ? 0.12 + 0.05 * k : 0 }),
     lesson: "Do slow work later: put it on a queue and let workers handle it, so the user gets an answer at once.",
+    everyday: "Like a waiter who cooks each meal before taking the next order: write it on a ticket (a queue) and let the kitchen (workers) cook.",
     real: "SQS, RabbitMQ, Celery, Sidekiq" },
   deploy: { title: "Bad release", keys: ["deploy"], parts: ["canary"], event: "deploy-bug",
     forecast: at => `A developer is releasing version 4.${Math.round(at) % 9} at about ${clockText(at)}.`,
     surprise: "Someone pushed a hotfix without review.", page: "A new version is out.",
     lesson: "Release to a few servers first (a canary), watch the errors, and roll back fast if they rise.",
+    everyday: "Like changing a recipe for every table at once: try it on one table first (a canary), and switch back fast if people complain.",
     real: "Argo Rollouts, AWS CodeDeploy, feature flags" },
   leak: { title: "Leaky release", keys: ["leak"], parts: ["canary"], event: "deploy-leak",
     forecast: at => `Version 5.0 goes out at about ${clockText(at)}. It is a big change.`,
     surprise: "A new version went out quietly an hour ago.", page: "A new version is out.",
     lesson: "Some bugs take minutes to show. Watch memory after a release, and roll back instead of restarting forever.",
+    everyday: "Like a sink that drains slower than the tap fills it: it looks fine for a while, then overflows. Turn off the new tap (roll back).",
     real: "Prometheus memory alerts, Kubernetes OOMKilled, rollbacks" },
   dbfail: { title: "Database died", keys: ["dbdown"], parts: ["standby"], event: "db-fail",
     forecast: at => `The database host has shown disk warnings all week. The database team thinks it could fail around ${clockText(at)}.`,
     surprise: "The primary database host just died.", page: "The primary database host died.",
     lesson: "Keep a standby copy of the database ready in another zone. Restoring from backup takes far too long.",
+    everyday: "Like a shop whose only till breaks: keep a spare till already set up (a standby) so customers can keep paying.",
     real: "RDS Multi-AZ, Patroni, Aurora failover" },
   zone: { title: "Zone outage", keys: ["azdown"], parts: ["app"], spare: 2, event: "az-fail",
     forecast: at => "The cloud status page shows some trouble in zone A tonight. If it goes down, you lose half your app servers at once.",
     surprise: "Zone A just went dark.", page: "Zone A is down.",
     lesson: "Spread servers over two zones and keep enough spare room to lose one of them.",
+    everyday: "Like a business with two branches where one floods: the other must serve everyone, so it needs spare room.",
     real: "AWS Availability Zones, Kubernetes topology spread" },
+  crash: { title: "Server crash", keys: [], parts: ["app"], spare: 1, event: "crash",
+    forecast: at => "One app server's health checks have been flaky all evening. It may not last the night.",
+    surprise: "An app server just crashed.", page: "An app server crashed.",
+    lesson: "Always run one more server than you need (N+1), so losing one costs capacity, not the site.",
+    everyday: "Like a cashier going home sick mid-shift: if you staffed exactly enough, the line grows. One spare cashier covers it.",
+    real: "Load balancer health checks, Auto Scaling replacing failed instances, Kubernetes ReplicaSets" },
   partner: { title: "Slow payment partner", keys: ["partner"], parts: ["breaker"], event: "partner-slow", pay: true,
     forecast: at => "The payment provider has maintenance planned tonight.",
     surprise: "The payment provider slowed right down.", page: "The payment provider now takes 8 seconds to answer.",
     lesson: "Never let a slow outside service tie up your servers: set short timeouts and a circuit breaker.",
+    everyday: "Like a cashier stuck on a card machine that hangs: give up after a few seconds (a timeout) instead of stopping the whole line.",
     real: "Resilience4j, Envoy timeouts, Polly" },
 };
 /* Choices a real on-call engineer gets asked to make mid-shift. Each changes the shift; none is a trick. */
@@ -1522,7 +1537,7 @@ function incidentReport(S, oc) {
     sq.push(cls === "good" ? "🟩" : cls === "help" ? "🟨" : cls === "bad" ? "🟥" : "⬜");
     rows.push(`<li class="pm ${cls}"><div class="pm-h"><b>${clockText(x.at)} · ${x.title}</b><span>${how}</span></div>
       <p><small>${x.told ? "Forecast" : "Surprise"}:</small> ${x.told ? x.forecast(x.at) : x.surprise}${happened && lost >= 1 ? ` It cost <b>${Math.round(lost)}%</b> of site health.` : ""}</p>
-      <p><b>Lesson:</b> ${x.lesson} <span class="real">In real life: ${x.real}.</span></p></li>`);
+      <p><b>Lesson:</b> ${x.lesson}${x.everyday ? ` <span class="real">In everyday terms: ${x.everyday}</span>` : ""} <span class="real">In real life: ${x.real}.</span></p></li>`);
   }
   for (const c of S.choices || []) {
     const d = DECISIONS[c.key];
@@ -2371,7 +2386,7 @@ function showMenu() {
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
     ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are.</span>
+      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b>.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
