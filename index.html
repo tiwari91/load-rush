@@ -44,6 +44,34 @@
 .sheet.home .msec:first-child { margin-top: 0; }
 .sheet.home .tipday { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--line-2); font-size: 13px; color: var(--ink-dim); max-width: none; }
 .sheet.home h3 { margin-top: 18px; }
+.sheet.wide { width: min(1120px, 100%); padding: 0 36px 28px; }
+.sheet.wide .sheet-top { margin: 0 -36px; }
+.gintro { color: var(--ink-dim); margin: 0 0 4px; }
+.flowmap button.fbox { text-align: left; background: var(--panel-2); color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; }
+.flowmap button.fbox:hover, .flowmap .fbox.on { border-color: var(--accent); }
+.flowmap .fbox.on { background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+.gwrap { display: grid; grid-template-columns: 220px 1fr; gap: 20px; margin-top: 16px; align-items: start; }
+.glist { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px; }
+.glist button { display: flex; align-items: center; gap: 10px; text-align: left; background: none; border: 1px solid transparent; border-radius: 8px; padding: 7px 10px; color: var(--ink-dim); font: 600 14px var(--body); }
+.glist button:hover { color: var(--ink); background: var(--panel-2); }
+.glist button.on { color: var(--ink); background: var(--panel-2); border-color: var(--accent); }
+.glist .tag, .gdh .tag { font: 700 10px var(--mono); min-width: 34px; text-align: center; padding: 3px 4px; border-radius: 5px; border: 1px solid var(--line-2); color: var(--accent); }
+.gdetail { border: 1px solid var(--line-2); border-radius: 12px; background: var(--panel-2); padding: 22px 26px; min-height: 420px; }
+.gdh { display: flex; align-items: center; gap: 14px; }
+.gdh .tag { font-size: 13px; padding: 8px 6px; min-width: 48px; }
+.gdh h3 { margin: 0; font-size: 24px; } .gdh .gz { font-size: 12px; color: var(--ink-faint); }
+.glead { font-size: 19px; line-height: 1.45; margin: 16px 0; max-width: 60ch; }
+.geveryday { border-left: 3px solid var(--accent); padding: 10px 14px; margin: 0 0 14px; background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 0 8px 8px 0; max-width: 64ch; }
+.geveryday b, .gyes b, .gno b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.geveryday b { color: var(--accent); }
+.gwhen { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.gyes, .gno { border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.gyes b { color: var(--ok); } .gno b { color: var(--bad, #e98a8a); }
+.gacts { margin-top: 10px; } .gmore { margin-top: 12px; }
+.gnav { display: flex; justify-content: space-between; margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line-2); }
+.zev { margin-top: auto; font-size: 12px; line-height: 1.4; color: var(--ink-faint); padding: 8px 2px 0; }
+.zev::before { content: "Everyday: "; font-weight: 600; color: var(--ink-dim); }
+.zev + .load { margin-top: 8px; }
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -119,7 +147,7 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .details { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 900px) { .details { grid-template-columns: 1fr; } }
 .zsub { font-size: 11px; color: var(--ink-faint); margin-top: -4px; }
-.paused { position: absolute; inset: auto 0 18px 0; margin: 0 auto; width: max-content; max-width: 90%; z-index: 3; display: flex; gap: 10px; align-items: center;
+.paused { position: absolute; inset: 50% 0 auto 0; transform: translateY(-50%); margin: 0 auto; width: max-content; max-width: 90%; z-index: 3; display: flex; gap: 10px; align-items: center;
   background: var(--panel-2); border: 1px solid var(--accent); border-radius: 99px; padding: 8px 18px; font-size: 14px; pointer-events: none; }
 .paused b { font: 700 14px var(--display); color: var(--accent); }
 .btn.big { font-size: 15px; padding: 9px 18px; }
@@ -408,7 +436,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
   .tray .card { min-width: 132px; flex: 0 0 auto; padding: 6px 8px; }
   .tray .card .meta { font-size: 10px; }
   .board-wrap { align-self: stretch; max-width: 100%; -webkit-overflow-scrolling: touch; }
-  .zone .zsub { display: none; }
+  .zone .zsub, .zone .zev { display: none; }
   .partcard { left: 8px !important; right: 8px; width: auto; }
   #toast { bottom: calc(100px + env(safe-area-inset-bottom)) !important; }
 }
@@ -494,12 +522,12 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
           <div class="big mono" id="uRps">0</div><div class="small">visitors<br>a second</div>
           <div class="small botc mono" id="uBots"></div>
         </div>
-        <div class="zone" data-z="edge" title="Everyday: the shop's front door and doorman, plus local copies of the leaflets everyone asks for."><div class="zhead"><span class="zname">Edge</span></div><div class="zsub">Front door: filters and serves files</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="entry" title="Everyday: the person at the bank door who sends you to whichever counter is free."><div class="zhead"><span class="zname">Entry</span></div><div class="zsub">Shares visitors between servers</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="app" title="Everyday: the cashiers. Each one serves a fixed number of customers a minute."><div class="zhead"><span class="zname">App servers</span></div><div class="zsub">Run your website's code</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="cache" title="Everyday: bestsellers kept on the counter instead of fetched from the stockroom."><div class="zhead"><span class="zname">Cache</span></div><div class="zsub">Remembers common answers</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="jobs" title="Everyday: the kitchen's order tickets and the cooks who work through them."><div class="zhead"><span class="zname">Background jobs</span></div><div class="zsub">Does slow work later</div><div class="chips"></div><div class="load"></div></div>
-        <div class="zone" data-z="data" title="Everyday: the shop's one official ledger, plus copies and a spare kept ready."><div class="zhead"><span class="zname">Database</span></div><div class="zsub">Stores your data</div><div class="chips"></div><div class="load"></div></div>
+        <div class="zone" data-z="edge"><div class="zhead"><span class="zname">Edge</span></div><div class="zsub">Front door: filters and serves files</div><div class="chips"></div><div class="zev">the shop's front door and doorman, plus local copies of the leaflets everyone asks for.</div><div class="load"></div></div>
+        <div class="zone" data-z="entry"><div class="zhead"><span class="zname">Entry</span></div><div class="zsub">Shares visitors between servers</div><div class="chips"></div><div class="zev">the person at the bank door who sends you to whichever counter is free.</div><div class="load"></div></div>
+        <div class="zone" data-z="app"><div class="zhead"><span class="zname">App servers</span></div><div class="zsub">Run your website's code</div><div class="chips"></div><div class="zev">the cashiers. Each one serves a fixed number of customers a minute.</div><div class="load"></div></div>
+        <div class="zone" data-z="cache"><div class="zhead"><span class="zname">Cache</span></div><div class="zsub">Remembers common answers</div><div class="chips"></div><div class="zev">bestsellers kept on the counter instead of fetched from the stockroom.</div><div class="load"></div></div>
+        <div class="zone" data-z="jobs"><div class="zhead"><span class="zname">Background jobs</span></div><div class="zsub">Does slow work later</div><div class="chips"></div><div class="zev">the kitchen's order tickets and the cooks who work through them.</div><div class="load"></div></div>
+        <div class="zone" data-z="data"><div class="zhead"><span class="zname">Database</span></div><div class="zsub">Stores your data</div><div class="chips"></div><div class="zev">the shop's one official ledger, plus copies and a spare kept ready.</div><div class="load"></div></div>
         <div class="paused" id="paused"><b>Paused</b><span id="pausedText">Add parts if you want, then press ▶ Start shift.</span></div>
       </div>
     </div>
@@ -2461,28 +2489,49 @@ const PART_GUIDE = {
     use: "Any database you cannot afford to lose for long. Backups restore lost data; a standby replaces a lost machine." },
 };
 const firstShiftFor = type => { const lv = LEVELS.find(l => (l.fresh || []).includes(type)) || LEVELS.find(l => (l.tray || []).includes(type) || (l.given || []).includes(type)); return lv ? `${lv.name} (shift ${LEVELS.indexOf(lv) + 1})` : "Sandbox"; };
-function showGuide(fromMenu) {
+let guidePick = "cdn";
+function showGuide(fromMenu, pick) {
   if (S) setRunning(false);
-  const zoneOf = t => ZONE_NAMES[PARTS[t].zone];
+  if (pick) guidePick = pick;
+  const items = [...GUIDE_ORDER.map(t => {
+    const p = PARTS[t], g = PART_GUIDE[t];
+    return { id: t, tag: p.tag, name: p.name, where: `${ZONE_NAMES[p.zone]} · $${p.cost} an hour`, what: p.what, everyday: g.everyday, example: g.example, use: g.use, not: WRONG_FIX[t],
+      real: `${p.real}. First taught in: ${firstShiftFor(t)}.`, extra: snippetHtml(t) + labHtml(t), builds: BUILDS.filter(b => b.part === t) };
+  }), ...EXTRA_GUIDE.map((g, k) => ({ id: "x" + k, tag: g.tag, name: g.name, where: g.zone, what: g.what, everyday: g.everyday, example: g.example, use: g.use, not: "",
+      real: g.real + ".", extra: `<details class="snip"><summary>Try it yourself: ${g.lab[0]}</summary><ol class="lab">${g.lab[1].map(x => `<li>${escHtml(x)}</li>`).join("")}</ol></details>`, builds: BUILDS.filter(b => b.id === "apigw") }))];
+  if (!items.some(x => x.id === guidePick)) guidePick = items[0].id;
+  const flow = [["Visitor", "a browser or app", "", ""], ["CDN", "files near the user", "CloudFront", "cdn"], ["Rate limiter", "turns away floods", "AWS WAF", "waf"], ["Load balancer", "shares the visitors", "ALB + certificate", "lb"],
+    ["App servers", "run your code", "EC2 / ECS", "app"], ["Cache · Queue", "fast reads, slow work later", "ElastiCache · SQS", "cache"], ["Database", "the one true record", "RDS", "db"]];
+  const detail = x => { const i = items.indexOf(x), prev = items[i - 1], next = items[i + 1]; return `
+    <div class="gdh"><span class="tag">${x.tag}</span><div><h3>${x.name}</h3><span class="gz">${x.where}</span></div></div>
+    <p class="glead">${x.what}</p>
+    <div class="geveryday"><b>Like in everyday life</b>${x.everyday}</div>
+    <p><b>Example.</b> ${x.example}</p>
+    <div class="gwhen"><div class="gyes"><b>Use it when</b>${x.use}</div>${x.not ? `<div class="gno"><b>Not the fix when</b>${x.not}</div>` : ""}</div>
+    <p class="real"><b>In real life:</b> ${x.real}</p>
+    ${x.builds.length ? `<div class="acts gacts">${x.builds.map(b => `<button class="btn go" data-gb="${b.id}">Practise the AWS setup: ${b.name}</button>`).join("")}</div>` : ""}
+    ${x.extra ? `<div class="gmore">${x.extra}</div>` : ""}
+    <div class="gnav">${prev ? `<button class="btn" data-gp="${prev.id}">← ${prev.name}</button>` : "<span></span>"}${next ? `<button class="btn" data-gp="${next.id}">${next.name} →</button>` : "<span></span>"}</div>`; };
   openSheet(`<div class="kick">Parts guide</div><h2>What each part does</h2>
-    <p>A visit travels left to right, the same way it does on the board. Each part removes one kind of trouble. Start with the ones in the first shifts; the rest arrive one shift at a time.</p>
-    <div class="flowmap">${[["Visitor", "a browser or app", ""], ["CDN", "files near the user", "CloudFront"], ["Rate limiter", "turns away floods", "AWS WAF"], ["Load balancer", "shares the visitors", "ALB + ACM certificate"], ["App servers", "run your code", "EC2 / ECS + Auto Scaling"], ["Cache · Queue", "fast reads · slow work later", "ElastiCache · SQS"], ["Database", "the one true record", "RDS + replica + standby"]]
-      .map(([n, d, aws]) => `<div class="fbox"><b>${n}</b><span>${d}</span>${aws ? `<i>${aws}</i>` : ""}</div>`).join('<div class="farrow">→</div>')}</div>
-    <div class="pguide">${GUIDE_ORDER.map(t => { const p = PARTS[t], g = PART_GUIDE[t]; return `
-      <div class="gcard"><div class="gh"><span class="tag">${p.tag}</span><b>${p.name}</b><span class="gz">${zoneOf(t)} · $${p.cost}/h</span></div>
-        <p>${p.what}</p>
-        <p><b>Everyday:</b> ${g.everyday}</p>
-        <p><b>Example:</b> ${g.example}</p>
-        <p><b>Use it when:</b> ${g.use}</p>
-        ${WRONG_FIX[t] ? `<p><b>Not the fix when:</b> ${WRONG_FIX[t]}</p>` : ""}
-        <p class="real">In real life: ${p.real}. First taught in: ${firstShiftFor(t)}.</p>${snippetHtml(t)}${labHtml(t)}${BUILDS.filter(b => b.part === t).map(b => `<button class="linkbtn gbuild" data-gb="${b.id}">Practise the AWS setup: ${b.name} →</button>`).join("<br>")}</div>`; }).join("")}${EXTRA_GUIDE.map(g => `
-      <div class="gcard"><div class="gh"><span class="tag">${g.tag}</span><b>${g.name}</b><span class="gz">${g.zone}</span></div>
-        <p>${g.what}</p><p><b>Everyday:</b> ${g.everyday}</p><p><b>Example:</b> ${g.example}</p><p><b>Use it when:</b> ${g.use}</p>
-        <p class="real">In real life: ${g.real}.</p><details class="snip"><summary>Try it yourself: ${g.lab[0]}</summary><ol class="lab">${g.lab[1].map(x => `<li>${escHtml(x)}</li>`).join("")}</ol></details></div>`).join("")}</div>
-    <div class="acts">${fromMenu ? `<button class="btn go" id="bGuideMenu">Back to the menu</button>` : `<button class="btn go" id="bGuideClose">Back to the game</button>`}<button class="btn" id="bGuideQuiz">Quiz: which part fixes this?</button></div>`, closeSheet);
+    <p class="gintro">A visit travels left to right, the same way it does on the board. Click a step, or a part in the list.</p>
+    <div class="flowmap">${flow.map(([n, d, aws, id]) => `<${id ? `button data-gp="${id}"` : "div"} class="fbox" ${id ? `data-flow="${id}"` : ""}><b>${n}</b><span>${d}</span>${aws ? `<i>${aws}</i>` : ""}</${id ? "button" : "div"}>`).join('<div class="farrow">→</div>')}</div>
+    <div class="gwrap">
+      <nav class="glist">${items.map(x => `<button data-gp="${x.id}"><span class="tag">${x.tag}</span>${x.name}</button>`).join("")}</nav>
+      <div class="gdetail" id="gDetail"></div>
+    </div>
+    <div class="acts">${fromMenu ? `<button class="btn" id="bGuideMenu">Back to the menu</button>` : `<button class="btn" id="bGuideClose">Back to the game</button>`}<button class="btn" id="bGuideQuiz">Quiz: which part fixes this?</button></div>`, fromMenu ? showMenu : closeSheet, "wide");
+  const show = id => {
+    guidePick = id; const x = items.find(y => y.id === id);
+    $("#gDetail").innerHTML = detail(x); $("#gDetail").scrollTop = 0;
+    for (const el of document.querySelectorAll(".glist [data-gp]")) el.classList.toggle("on", el.dataset.gp === id);
+    for (const el of document.querySelectorAll(".fbox[data-flow]")) el.classList.toggle("on", el.dataset.flow === id);
+    for (const el of document.querySelectorAll("#gDetail [data-gp]")) el.onclick = () => show(el.dataset.gp);
+    for (const el of document.querySelectorAll("#gDetail [data-gb]")) el.onclick = () => playBuild(BUILDS.find(b => b.id === el.dataset.gb), fromMenu);
+  };
+  for (const el of document.querySelectorAll(".flowmap [data-gp], .glist [data-gp]")) el.onclick = () => show(el.dataset.gp);
+  show(guidePick);
   $("#bGuideQuiz").onclick = () => showQuiz(fromMenu);
   if ($("#bGuideMenu")) $("#bGuideMenu").onclick = showMenu;
-  for (const el of document.querySelectorAll("[data-gb]")) el.onclick = () => playBuild(BUILDS.find(b => b.id === el.dataset.gb), fromMenu);
   if ($("#bGuideClose")) $("#bGuideClose").onclick = closeSheet;
   track("guide", fromMenu ? "menu" : "game");
 }
