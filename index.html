@@ -19,6 +19,7 @@
 .lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
+.rgraph{width:100%;height:auto;background:rgba(0,0,0,.25);border-radius:8px;margin-top:6px}.rkey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:6px 0}.rkey i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -2481,6 +2482,55 @@ function playBuild(b, fromMenu) {
   };
   draw();
 }
+/* Read the graph: a dashboard chart with no labels on the cause; name the incident. Series are 0..1, 40 points. */
+const R40 = f => Array.from({ length: 40 }, (_, i) => f(i));
+const GRAPHS = [
+  { a: "Memory leak", opts: ["Memory leak", "Traffic spike", "Bot flood"], lines: { "Memory used": R40(i => i < 8 ? 0.3 : i <= 24 ? Math.min(0.95, 0.3 + (i - 8) * 0.04) : Math.min(0.95, 0.3 + (i - 25) * 0.04)), "Failed pages": R40(i => (i >= 22 && i <= 25) || i >= 38 ? 0.6 : 0.03) },
+    why: "Memory climbs steadily after a release and never comes back down, then servers are killed (the drop) and errors spike. That saw-tooth is a leak." },
+  { a: "Bot flood", opts: ["Bot flood", "Viral real traffic", "Database died"], lines: { "Requests a second": R40(i => i >= 12 && i <= 30 ? 0.95 : 0.25), "Sign-ups": R40(i => 0.25) },
+    why: "Requests jump about 4x but sign-ups stay flat. Real visitors would also sign up and buy; bots do not." },
+  { a: "Zone outage", opts: ["Zone outage", "Memory leak", "Slow partner"], lines: { "Healthy servers": R40(i => i >= 15 && i <= 30 ? 0.45 : 0.9), "Failed pages": R40(i => i >= 15 && i <= 18 ? 0.5 : 0.03) },
+    why: "Half the healthy servers vanish at one instant and come back together later. A whole building (zone) went dark." },
+  { a: "Bad release", opts: ["Bad release", "Traffic spike", "Zone outage"], lines: { "Failed pages": R40(i => i >= 14 && i <= 22 ? 0.7 : 0.03), "Visitors a second": R40(i => 0.5) },
+    why: "Traffic is flat, but errors jump right after a deploy and drop to normal the moment it is rolled back. The change caused it." },
+  { a: "Traffic spike", opts: ["Traffic spike", "Bot flood", "Bad release"], lines: { "Visitors a second": R40(i => i >= 12 && i <= 28 ? 0.9 : 0.35), "Page speed (p95)": R40(i => i >= 13 && i <= 29 ? 0.75 : 0.2), "Sign-ups": R40(i => i >= 12 && i <= 28 ? 0.8 : 0.3) },
+    why: "Visitors and sign-ups rise together (real people), and pages slow down because servers are busy. Add capacity or cache." },
+  { a: "Slow partner", opts: ["Slow partner", "Database died", "Memory leak"], lines: { "Payment API wait (ms)": R40(i => i >= 10 && i <= 30 ? 0.95 : 0.1), "Busy app servers": R40(i => i >= 11 && i <= 30 ? 0.95 : 0.4), "Visitors a second": R40(i => 0.4) },
+    why: "Visitors are flat, yet servers fill up exactly while the payment API is slow: they are stuck waiting. Timeouts and a circuit breaker fix it." },
+];
+const graphSvg = lines => {
+  const cols = ["#f5c04a", "#e05252", "#5fb3d9"], W = 560, H = 160;
+  const pts = arr => arr.map((v, i) => `${(i / 39 * W).toFixed(1)},${(H - 8 - v * (H - 16)).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}" class="rgraph" role="img">${Object.values(lines).map((a, k) => `<polyline fill="none" stroke="${cols[k]}" stroke-width="2.5" points="${pts(a)}"/>`).join("")}</svg>
+    <div class="rkey">${Object.keys(lines).map((n, k) => `<span><i style="background:${cols[k]}"></i>${n}</span>`).join("")}</div>`;
+};
+function showGraphs(fromMenu) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const order = GRAPHS.map((_, i) => i).sort(() => Math.random() - 0.5);
+  let n = 0, score = 0;
+  const ask = () => {
+    const g = GRAPHS[order[n]];
+    openSheet(`<div class="kick">Read the graph · ${n + 1} of ${GRAPHS.length}</div><h2>What happened here?</h2>
+      <p>A dashboard over 40 minutes. Read the lines, then name the incident.</p>${graphSvg(g.lines)}
+      <div class="choices">${g.opts.slice().sort().map(o => `<button class="choice" data-o="${o}">${o}</button>`).join("")}</div><div id="rgWhy"></div>`, back);
+    for (const b of document.querySelectorAll(".choice[data-o]")) b.onclick = () => {
+      const ok = b.dataset.o === g.a; if (ok) score++;
+      for (const c of document.querySelectorAll(".choice[data-o]")) { c.disabled = true; if (c.dataset.o === g.a) c.classList.add("right"); }
+      if (!ok) b.classList.add("wrong");
+      $("#rgWhy").innerHTML = `<p><b>${ok ? "Right." : "It was: " + g.a + "."}</b> ${g.why}</p><div class="acts"><button class="btn go" id="bRgNext">${n + 1 < GRAPHS.length ? "Next graph" : "See my score"}</button></div>`;
+      $("#bRgNext").onclick = () => { n++; n < GRAPHS.length ? ask() : end(); };
+    };
+  };
+  const end = () => {
+    store.set("loadrush-graphs-best", Math.max(score, store.get("loadrush-graphs-best", 0))); track("graphs", String(score));
+    openSheet(`<div class="kick">Read the graph</div><h2>${score} of ${GRAPHS.length} right</h2>
+      <p>Real on-call work starts with a graph like these. The shape tells you the cause before any log does: a slow climb, a sudden cliff, or two lines that should move together but do not.</p>
+      <div class="acts"><button class="btn go" id="bRgAgain">Try again</button><button class="btn" id="bRgBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back);
+    $("#bRgAgain").onclick = () => showGraphs(fromMenu); $("#bRgBack").onclick = back;
+  };
+  ask();
+}
 function showWords() {
   if (S) setRunning(false);
   openSheet(`<div class="kick">Words</div><h2>What the words mean</h2>
@@ -2745,6 +2795,7 @@ function showMenu() {
       <button class="lv sand" data-i="tour"><span class="n">1 minute</span><span class="t">Tutorial</span><span class="d">A guided start on the first shift.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="guide"><span class="n">Read</span><span class="t">Parts guide</span><span class="d">What each part does: everyday comparison, real config, try-it-yourself lab.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="build"><span class="n">${BUILDS.length} AWS services</span><span class="t">AWS Builder</span><span class="d">Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="graphs"><span class="n">${GRAPHS.length} dashboards</span><span class="t">Read the graph</span><span class="d">Look at the lines and name the incident.</span><span class="s">${store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "&nbsp;"}</span></button>
       <button class="lv sand" data-i="quiz"><span class="n">8 questions</span><span class="t">Quiz</span><span class="d">Which part fixes this?</span><span class="s">${store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "&nbsp;"}</span></button>
     </div></div>
     <div class="msec"><h3>Play</h3>
@@ -2793,6 +2844,7 @@ function showMenu() {
     if (b.dataset.i === "guide") { showGuide(true); return; }
     if (b.dataset.i === "quiz") { showQuiz(true); return; }
     if (b.dataset.i === "build") { showBuilder(true); return; }
+    if (b.dataset.i === "graphs") { showGraphs(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }

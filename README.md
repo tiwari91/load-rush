@@ -41,6 +41,8 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Start here** (top of the menu): Tutorial, Parts guide, a quiz, then shifts 1 to 3 and the Sandbox.
 - **Real config and labs:** every part card shows a short real config (nginx, Kubernetes HPA, Redis, SQS in Terraform, RDS Multi-AZ...) and a **Try it yourself** lab: numbered beginner steps, free or local first (Docker, kind, Moto), real AWS only where needed with a $5 budget alarm and same-day cleanup. The guide also has an **API Gateway** card with its own free-tier lab.
 - **AWS Builder** (menu, Learn the basics): put the real setup steps of 8 AWS services in order: ALB, API Gateway + Lambda, CloudFront, Auto Scaling, RDS Multi-AZ, ElastiCache, SQS with a dead-letter queue, and WAF. Each right step explains what it does.
+- **Read the graph:** six dashboards (memory leak, bot flood, zone outage, bad release, traffic spike, slow partner); name the incident from the shape of the lines.
+- **Try again with a hint:** after a rough shift, retry with the part that fixes what hurt most glowing in the tray.
 - **Quiz: which part fixes this?** Eight short scenarios; each answer explains why and gives the everyday comparison.
 
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.
