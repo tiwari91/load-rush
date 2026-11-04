@@ -828,6 +828,20 @@ const DECISIONS = {
       { label: "Wait until traffic is quiet", pts: 80, run: () => log("info", "The fix waits for the morning. No surprises tonight."),
         why: "Many teams freeze releases during busy times. A small fix can usually wait an hour." } ],
     lesson: "Release when it is quiet, a little at a time (a canary), and keep the Roll back button close." },
+  cache: { title: "Product: switch the cache off so prices are always fresh?", ask: "A customer saw an old price for a few seconds. Product asks you to switch the cache off tonight so every page is always up to date.",
+    options: [
+      { label: "Switch the cache off", pts: 0, run: () => { const c = S.pieces.find(x => x.type === "cache" && !x.fixed); if (c) removePiece(c.id); else log("info", "There was no cache to switch off."); },
+        why: "Every read now goes to the database. On a busy night that can overload it, and the whole site gets slower to fix a few seconds of old prices." },
+      { label: "Keep it, but expire prices after 30 seconds", pts: 80, run: () => log("info", "The cache stays. Prices now refresh every 30 seconds."),
+        why: "A short expiry time (TTL) keeps most of the cache's help while limiting how old a price can get. Prices that must be exact can skip the cache on their own." } ],
+    lesson: "Old data is usually fixed with a shorter expiry or by skipping the cache for the few things that must be exact, not by switching the cache off." },
+  import: { title: "A partner wants to run a big data import right now", ask: "A business partner wants to send you 40 seconds of bulk updates now, while visitors are on the site. They could also run it at 2 am.",
+    options: [
+      { label: "Let them run it now", pts: 0, run: () => { S.extra.push({ t0: S.t + 2, t1: S.t + 42, legit: 260 }); log("page", "The partner's import started. Extra requests are arriving."); },
+        why: "Bulk jobs compete with real visitors for the same servers and database. At peak time that means slower pages for everyone." },
+      { label: "Ask them to run it at 2 am", pts: 80, run: () => log("info", "The import moves to 2 am, when the site is quiet."),
+        why: "Batch work belongs in quiet hours, or behind its own rate limit, so it never competes with customers." } ],
+    lesson: "Schedule bulk jobs (imports, reports, backfills) for quiet hours, or give them their own rate limit." },
 };
 function makeOnCall(day, practiceSeed) {
   const practice = practiceSeed != null, rand = seededRandom(practice ? practiceSeed : hashText("loadrush-oncall-" + day));
@@ -2148,6 +2162,13 @@ const WORDS = [
   ["Failover", "A standby copy taking over when the main one dies."],
   ["Timeout", "How long to wait for another service before giving up."],
   ["Circuit breaker", "After many failures, stop calling a service for a while and fail fast instead."],
+  ["N+1", "Running one more server (or copy) than you need, so losing one does not hurt."],
+  ["Cache expiry (TTL)", "How long a saved answer is kept before it is fetched again. Shorter means fresher data but more work for the database."],
+  ["Idempotent", "Safe to run twice: doing it again gives the same result. Important for queued jobs and payments that may be retried."],
+  ["Health check", "A quick test the load balancer runs on each server. A server that fails it stops getting traffic."],
+  ["Batch job", "Bulk work run in one go (imports, reports, backups). Best done when the site is quiet."],
+  ["Canary", "Sending a new version to a small share of users first, to catch problems before everyone sees them."],
+  ["Error budget", "How much failure you agreed to tolerate. In this game it is Site health."],
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
@@ -2456,7 +2477,7 @@ function showMenu() {
     <h2>Load Rush</h2>
     <p>Keep a website up while visitors pour in. Drag parts onto the board to fix what breaks. Each shift teaches one real DevOps fix.</p>
     ${store.get("loadrush-new-2", false) ? "" : `<div class="whatsnew" id="whatsNew"><b>New in Load Rush</b>
-      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b> · new <b>Parts guide</b> on the menu: what each part does, with an everyday comparison and a real example.</span>
+      <span>Four new shifts: <b>Viral Video</b>, <b>Payday Rush</b>, <b>Storm Night</b> and <b>Release Week</b> · every shift and every On call incident now explains its problem <b>in everyday terms</b>, so you can follow it whatever kind of developer you are · On call can now throw a <b>Server crash</b> · new <b>Parts guide</b> on the menu: what each part does, with an everyday comparison and a real example · two new On call decisions (switch the cache off? run a partner import now?) and more beginner words.</span>
       <button class="btn" id="bNewOk">Got it</button></div>`}
     ${showResume ? `<button class="resume" id="bResume">▶ Resume your shift: <b>${g.L.name}</b> at ${Math.floor(g.S.t / 60)}:${String(Math.floor(g.S.t % 60)).padStart(2, "0")}, health ${Math.ceil(g.S.budget)}%</button>` : ""}
     <div class="levels">${oncallCard()}${LEVELS.map((lv, i) => `
