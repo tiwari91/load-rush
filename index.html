@@ -16,7 +16,7 @@
 .choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
-.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.built li{margin:6px 0}
+.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.card.hintglow{outline:2px solid var(--accent,#f5c04a);box-shadow:0 0 14px var(--accent,#f5c04a)}.built li{margin:6px 0}
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
 </style>
@@ -1892,6 +1892,7 @@ function renderTray() {
   $("#sandbox").hidden = !L.sandbox;
   if (L.sandbox) renderExperiments();
   if (typeof showSuggestion === "function" && S) { showSuggestion(); updateHeader(); }
+  applyRetryHint();
 }
 function renderBoard() {
   setTimeout(tourCheck, 0);
@@ -2555,6 +2556,15 @@ function setup(level) {
   renderTray(); layoutZones(); renderBoard(); updateRollback(); measure();
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
+/* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
+const FIX_PART = { nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+let retryHint = null;
+function applyRetryHint() {
+  for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
+  if (!retryHint || !L || L.id !== retryHint.level) return;
+  const c = document.querySelector(`.card[data-type="${retryHint.part}"]`);
+  if (c) c.classList.add("hintglow");
+}
 function load(level) {
   endTour();
   store.set("loadrush-game", null);
@@ -2624,6 +2634,7 @@ function end(win) {
       ${win && next ? `<button class="btn go" id="bNext">Next shift: ${next.name}</button>` : ""}
       ${oc ? `<button class="btn go" id="bPractice">${oc.practice ? "Another practice shift" : "Practice shift (random)"}</button>` : ""}
       <button class="btn ${win && next || oc ? "" : "go"}" id="bRetry">${oc && !oc.practice ? "Play today's again" : "Try again"}</button>
+      ${worst && FIX_PART[worst.key] && L.tray.includes(FIX_PART[worst.key]) ? `<button class="btn ${win ? "" : "go"}" id="bRetryHint">Try again with a hint: ${PARTS[FIX_PART[worst.key]].name}</button>` : ""}
       <button class="btn" id="bMenu">All shifts</button>
     </div>
     ${L.sandbox ? "" : feedbackBox(L.name)}`, closeSheet);
@@ -2643,7 +2654,8 @@ function end(win) {
     try { navigator.clipboard.writeText(text).then(done, () => prompt("Copy your result:", text)); } catch { prompt("Copy your result:", text); }
     track("oncall-share", oc.day);
   };
-  $("#bRetry").onclick = () => load(L);
+  $("#bRetry").onclick = () => { retryHint = null; load(L); };
+  if ($("#bRetryHint")) $("#bRetryHint").onclick = () => { retryHint = { level: L.id, part: FIX_PART[worst.key], why: worst.name, fix: worst.fix }; track("retry-hint", worst.key); load(L); };
   $("#bMenu").onclick = showMenu;
   log(win ? "good" : "page", win ? "Shift complete." : "Error budget is gone. Site down.");
 }
@@ -2690,6 +2702,7 @@ function showBrief() {
     <p>${L.brief}</p>
     ${L.story ? `<p class="real"><b>In everyday terms:</b> ${L.story}</p>` : ""}
     <p><b>${L.task}</b></p>
+    ${retryHint && retryHint.level === L.id ? `<div class="worst"><div class="label">Hint from your last try</div><b>${retryHint.why}</b> hurt most. ${retryHint.fix} The part is glowing in your tray.</div>` : ""}
     ${fresh.length ? `<div class="label" style="margin-top:14px">New parts in your tray</div>
       <ul>${fresh.map(p => `<li><b>${p.name}</b> ($${p.cost}/h, ${p.boot}s to start). ${p.what} <span class="real">In real life: <b>${p.real}</b>.</span></li>`).join("")}</ul>` : ""}
     <p class="real">The game starts paused. The bar above the board always tells you what to do next.${teachOn ? " Teach mode is on: the game pauses to explain each problem." : ""}</p>
