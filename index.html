@@ -72,6 +72,9 @@
 .zev { margin-top: auto; font-size: 12px; line-height: 1.4; color: var(--ink-faint); padding: 8px 2px 0; }
 .zev::before { content: "Everyday: "; font-weight: 600; color: var(--ink-dim); }
 .zev + .load { margin-top: 8px; }
+.bprog { display: flex; align-items: center; gap: 12px; margin: 4px 0 14px; font-size: 13px; color: var(--ink-dim); } .bprog .skillbar { flex: 1; margin: 0; }
+.lv.built .n { color: var(--ok); }
+.lv.sand { border-style: solid; }
 </style>
 <script data-goatcounter="https://stiw.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </head>
@@ -2673,10 +2676,14 @@ function showBuilder(fromMenu) {
   if (S) setRunning(false);
   const back = () => fromMenu ? showMenu() : closeSheet();
   const done = store.get("loadrush-build", {});
+  const ORDER = ["vpc", "iam", "alb", "asg", "rds", "cache", "cdn", "route53", "waf", "sqs", "ecs", "apigw", "cloudwatch"];
+  const list = [...ORDER.map(id => BUILDS.find(b => b.id === id)).filter(Boolean), ...BUILDS.filter(b => !ORDER.includes(b.id))];
+  const n = list.filter(b => done[b.id]).length, nextId = (list.find(b => !done[b.id]) || {}).id;
   openSheet(`<div class="kick">AWS Builder</div><h2>Put the real setup steps in order</h2>
-    <p>Pick an AWS service. Its setup steps are shuffled: click them in the order you would really do them. Each right step explains what it does. Wrong guesses cost nothing.</p>
-    <div class="levels">${BUILDS.map(b => `<button class="lv sand" data-b="${b.id}"><span class="n">${b.steps.length} steps${done[b.id] ? " · ✓ built" : ""}</span><span class="t">${b.name}</span><span class="d">${b.part ? "In the game: " + PARTS[b.part].name : "Not in the game: see the Parts guide"}</span><span class="s">&nbsp;</span></button>`).join("")}</div>
-    <div class="acts"><button class="btn go" id="bBuildBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back);
+    <p class="gintro">Pick an AWS service. Its setup steps are shuffled: click them in the order you would really do them. Wrong guesses cost nothing. New to AWS? Go in the numbered order: each one builds on the ones before it.</p>
+    <div class="bprog"><span>${n} of ${list.length} built</span><div class="skillbar"><i style="width:${100 * n / list.length}%"></i></div></div>
+    <div class="levels">${list.map((b, i) => `<button class="lv${b.id === nextId ? " next" : ""}${done[b.id] ? " built" : ""}" data-b="${b.id}"><span class="n">${i + 1} · ${b.steps.length} steps${b.id === nextId ? ` <em>next</em>` : ""}${done[b.id] ? " · ✓ built" : ""}</span><span class="t">${b.name}</span><span class="d">${b.part ? "In the game: " + PARTS[b.part].name : "Beyond the game"}</span></button>`).join("")}</div>
+    <div class="acts"><button class="btn" id="bBuildBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back, "home");
   $("#bBuildBack").onclick = back;
   for (const el of document.querySelectorAll("[data-b]")) el.onclick = () => playBuild(BUILDS.find(b => b.id === el.dataset.b), fromMenu);
 }
