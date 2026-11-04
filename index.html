@@ -2490,6 +2490,36 @@ const BUILDS = [
     ["Add a rate-based rule that blocks any IP above your chosen limit (for example 1,000 requests in 5 minutes)", "Clients that send far too much are blocked; normal visitors are not."],
     ["Associate the Web ACL with your ALB or CloudFront distribution", "The rules now run at the front door."],
     ["Flood it from one machine with a load tool and watch blocked requests in the WAF metrics", "Proof the bots are stopped at the edge."] ] },
+  { id: "vpc", name: "VPC: your own private network", part: null, steps: [
+    ["Create a VPC with a private address range (for example 10.0.0.0/16)", "Your own network inside AWS. Nothing can reach it until you allow it."],
+    ["Create two public and two private subnets, spread over two zones", "Public subnets face the internet (load balancers); private ones hold servers and databases. Two zones survive one building failing."],
+    ["Attach an internet gateway and route the public subnets to it", "The internet gateway is the door to the internet, used only by the public subnets."],
+    ["Add a NAT gateway so private subnets can reach out (for updates) but nobody can reach in", "Private servers can download updates while staying unreachable from outside."],
+    ["Check the route tables: public to the internet gateway, private to the NAT", "Most VPC mistakes are a wrong route; checking them saves hours."] ] },
+  { id: "iam", name: "IAM role for an app server", part: null, steps: [
+    ["Write down exactly what the app needs (for example: read one S3 bucket)", "Start from the job, not from the permissions list. This is least privilege."],
+    ["Create an IAM policy that allows only s3:GetObject on that bucket", "A policy is the list of allowed actions on named resources, nothing more."],
+    ["Create an IAM role that EC2 is allowed to use, and attach the policy", "A role is an identity a machine can wear; no passwords or keys stored on the server."],
+    ["Attach the role to the EC2 instance (instance profile)", "The server now gets short-lived credentials automatically."],
+    ["Test: reading the bucket works, deleting from it is denied", "Proof the server can do its job and nothing else."] ] },
+  { id: "ecs", name: "Container on ECS Fargate", part: "app", steps: [
+    ["Build your app as a container image and push it to ECR", "ECR is AWS's private store for container images."],
+    ["Create an ECS cluster (Fargate: no servers to manage)", "The cluster is the group your containers run in; Fargate supplies the machines."],
+    ["Write a task definition: image, CPU, memory, port, log group", "The recipe for one running copy of your container."],
+    ["Create a service with 2 tasks in private subnets, attached to an ALB target group", "The service keeps 2 copies running and replaces any that die; the ALB shares traffic."],
+    ["Add service auto scaling on CPU", "More copies when busy, fewer when quiet, like the game's autoscaler."] ] },
+  { id: "route53", name: "Route 53: your domain name", part: null, steps: [
+    ["Register or bring a domain and create a hosted zone for it", "The hosted zone holds the DNS records for your domain."],
+    ["Request a free TLS certificate in ACM and validate it with a DNS record", "The certificate gives your site https. DNS validation proves you own the domain."],
+    ["Add an alias A record pointing www to your load balancer or CloudFront", "Visitors typing your name now reach your site."],
+    ["Add the certificate to the HTTPS listener (port 443)", "Traffic is now encrypted."],
+    ["Check with dig or nslookup and open https://www in a browser", "DNS changes can take minutes to spread; checking saves guessing."] ] },
+  { id: "cloudwatch", name: "CloudWatch alarm that pages you", part: null, steps: [
+    ["Pick the number that means users are hurting (for example: ALB 5xx errors)", "Alert on what users feel, not on every CPU bump."],
+    ["Create an SNS topic and subscribe your email or phone", "SNS is how AWS sends the message to you."],
+    ["Create a CloudWatch alarm: 5xx count above 10 for 3 minutes in a row", "Waiting for 3 minutes in a row avoids waking you for a single blip."],
+    ["Set the alarm action to the SNS topic", "When the alarm fires, you get paged."],
+    ["Test it: trigger errors on purpose and check the alert arrives", "An alarm that has never fired is a hope, not a plan."] ] },
 ];
 function showBuilder(fromMenu) {
   if (S) setRunning(false);

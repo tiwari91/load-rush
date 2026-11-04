@@ -40,7 +40,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 
 - **Start here** (top of the menu): Tutorial, Parts guide, a quiz, then shifts 1 to 3 and the Sandbox.
 - **Real config and labs:** every part card shows a short real config (nginx, Kubernetes HPA, Redis, SQS in Terraform, RDS Multi-AZ...) and a **Try it yourself** lab: numbered beginner steps, free or local first (Docker, kind, Moto), real AWS only where needed with a $5 budget alarm and same-day cleanup. The guide also has an **API Gateway** card with its own free-tier lab.
-- **AWS Builder** (menu, Learn the basics): put the real setup steps of 8 AWS services in order: ALB, API Gateway + Lambda, CloudFront, Auto Scaling, RDS Multi-AZ, ElastiCache, SQS with a dead-letter queue, and WAF. Each right step explains what it does.
+- **AWS Builder** (menu, Learn the basics): put the real setup steps of 13 AWS services in order: VPC, IAM role, ALB, API Gateway + Lambda, CloudFront, Auto Scaling, ECS Fargate, RDS Multi-AZ, ElastiCache, SQS with a dead-letter queue, WAF, Route 53 with HTTPS, and a CloudWatch alarm. Each right step explains what it does.
 - **Read the graph:** six dashboards (memory leak, bot flood, zone outage, bad release, traffic spike, slow partner); name the incident from the shape of the lines.
 - **Try again with a hint:** after a rough shift, retry with the part that fixes what hurt most glowing in the tray.
 - **Cost challenge:** win a shift under 80%, 90% or 100% of its spend limit for a Gold, Silver or Bronze cost medal, shown on the shift card.
