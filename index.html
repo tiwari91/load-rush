@@ -16,7 +16,7 @@
 .choice.right{outline:2px solid #4caf50}.choice.wrong{outline:2px solid #e05252}
 .snip{margin-top:8px;font-size:13px}.snip summary{cursor:pointer;color:var(--accent,#f5c04a)}
 .snip pre{margin:6px 0 0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);overflow-x:auto;font-size:12px;line-height:1.4}
-.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}
+.lab{margin:6px 0 0 18px;padding:0;font-size:13px;line-height:1.45}.lab li{margin:3px 0}.built li{margin:6px 0}
 .msec{margin-top:14px}.msec h3{margin:0 0 2px;font-size:15px}.msec h3 small{font-weight:400;opacity:.65;margin-left:6px;font-size:12px}
 .msec .levels{margin-top:6px}
 </style>
@@ -2399,6 +2399,87 @@ function showQuiz(fromMenu) {
   };
   ask();
 }
+/* AWS Builder: put the real setup steps in order. Each correct step explains itself in plain words. */
+const BUILDS = [
+  { id: "alb", name: "Application Load Balancer (ALB)", part: "lb", steps: [
+    ["Create a VPC with two public subnets in two zones", "The ALB needs a home network that spans two buildings, so one zone failing does not take it down."],
+    ["Create a security group that allows port 80/443 from the internet", "The firewall rule that lets visitors reach the load balancer, and nothing else."],
+    ["Launch two EC2 instances running your app, one per subnet", "These are the app servers the load balancer will share visitors between."],
+    ["Create a target group and register both instances, with a health check on /health", "The target group is the list of servers; the health check removes any that stop answering."],
+    ["Create the ALB in both public subnets and add a listener on port 80 to the target group", "The listener is the rule: requests on port 80 go to the healthy servers in the target group."],
+    ["Open the ALB's DNS name in a browser and refresh a few times", "You should see answers from both servers. Then stop one and watch traffic move to the other."] ] },
+  { id: "apigw", name: "API Gateway + Lambda", part: null, steps: [
+    ["Set a $5 AWS budget alarm", "Always first: you get an email before a mistake costs real money."],
+    ["Create a Lambda function that returns a small JSON answer", "The code that does the work. No server to manage; you pay per call."],
+    ["Create an HTTP API in API Gateway", "The front door for your API, with its own public URL."],
+    ["Add a route GET /hello and connect it to the Lambda", "A route maps a path and method to the code that answers it."],
+    ["Deploy to a stage and open the invoke URL", "The stage makes the API live. Your browser now gets the Lambda's JSON."],
+    ["Add throttling (for example 5 requests a second) and test with a load tool", "Callers above the limit now get 429 Too Many Requests: the gateway protects your code."] ] },
+  { id: "cdn", name: "CloudFront CDN for images", part: "cdn", steps: [
+    ["Create a private S3 bucket and upload your images", "The original copies live here. Private: visitors never reach S3 directly."],
+    ["Create a CloudFront distribution with the bucket as its origin", "CloudFront copies files to servers near your visitors."],
+    ["Add Origin Access Control and update the bucket policy", "Only CloudFront may read the bucket, so nobody can bypass the CDN."],
+    ["Set long cache times for images (Cache-Control: max-age=31536000)", "Files that never change can be kept near users for a year."],
+    ["Load an image twice through the CloudFront URL and check x-cache", "First Miss (fetched from S3), then Hit (served from the CDN)."] ] },
+  { id: "asg", name: "Auto Scaling group", part: "auto", steps: [
+    ["Create a launch template (AMI, instance type, security group)", "The recipe for a new server, so every copy is identical."],
+    ["Create an Auto Scaling group across two subnets, min 2, max 6", "The group keeps at least 2 servers running and may add up to 6."],
+    ["Attach the group to your ALB target group", "New servers join the load balancer automatically."],
+    ["Add a target tracking policy: average CPU 60%", "AWS adds servers when they get busy and removes them when quiet."],
+    ["Run a load test and watch the instance count change", "Proof that it scales out under load and back in afterwards."] ] },
+  { id: "rds", name: "RDS database with a standby (Multi-AZ)", part: "standby", steps: [
+    ["Create a DB subnet group with private subnets in two zones", "The database lives in private subnets, away from the internet, in two buildings."],
+    ["Create the RDS instance with Multi-AZ turned on", "AWS keeps a live standby copy in the other zone."],
+    ["Allow the app servers' security group to reach port 5432", "Only your app can talk to the database."],
+    ["Connect from an app server and create a table", "Your app's data now lives in RDS."],
+    ["Choose Reboot with failover and keep querying", "A few seconds of errors, then the standby takes over. Delete the instance the same day."] ] },
+  { id: "cache", name: "ElastiCache (Redis) cache", part: "cache", steps: [
+    ["Create a subnet group in your private subnets", "The cache, like the database, stays off the internet."],
+    ["Create a small Redis cluster", "The in-memory store your app will use for repeated reads."],
+    ["Allow the app servers' security group on port 6379", "Only your app can reach the cache."],
+    ["Change the app: check Redis first, read the database only on a miss, save with a 60 s expiry", "The cache-aside pattern: repeated reads never touch the database."],
+    ["Load the same page many times and watch database reads drop", "Proof the cache is working."] ] },
+  { id: "sqs", name: "SQS queue + worker", part: "queue", steps: [
+    ["Create a dead-letter queue", "Where jobs go after failing too many times, so they are not lost or retried forever."],
+    ["Create the main queue with a redrive policy (max 5 receives) to the dead-letter queue", "The to-do list for slow work, with a safety net."],
+    ["Change the app to send a message instead of doing the slow work", "The user gets an answer at once; the work waits in the queue."],
+    ["Run a worker that receives, processes and deletes messages", "The worker does the slow job in the background."],
+    ["Send 20 messages and watch the queue drain", "Add a second worker and it drains twice as fast."] ] },
+  { id: "waf", name: "AWS WAF rate limit", part: "waf", steps: [
+    ["Create a Web ACL", "A set of firewall rules for your web traffic."],
+    ["Add a rate-based rule that blocks any IP above your chosen limit (for example 1,000 requests in 5 minutes)", "Clients that send far too much are blocked; normal visitors are not."],
+    ["Associate the Web ACL with your ALB or CloudFront distribution", "The rules now run at the front door."],
+    ["Flood it from one machine with a load tool and watch blocked requests in the WAF metrics", "Proof the bots are stopped at the edge."] ] },
+];
+function showBuilder(fromMenu) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const done = store.get("loadrush-build", {});
+  openSheet(`<div class="kick">AWS Builder</div><h2>Put the real setup steps in order</h2>
+    <p>Pick an AWS service. Its setup steps are shuffled: click them in the order you would really do them. Each right step explains what it does. Wrong guesses cost nothing.</p>
+    <div class="levels">${BUILDS.map(b => `<button class="lv sand" data-b="${b.id}"><span class="n">${b.steps.length} steps${done[b.id] ? " · ✓ built" : ""}</span><span class="t">${b.name}</span><span class="d">${b.part ? "In the game: " + PARTS[b.part].name : "Not in the game: see the Parts guide"}</span><span class="s">&nbsp;</span></button>`).join("")}</div>
+    <div class="acts"><button class="btn go" id="bBuildBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back);
+  $("#bBuildBack").onclick = back;
+  for (const el of document.querySelectorAll("[data-b]")) el.onclick = () => playBuild(BUILDS.find(b => b.id === el.dataset.b), fromMenu);
+}
+function playBuild(b, fromMenu) {
+  const order = b.steps.map((_, i) => i).sort(() => Math.random() - 0.5);
+  let next = 0, misses = 0;
+  const draw = (msg) => {
+    openSheet(`<div class="kick">AWS Builder · ${b.name}</div><h2>Step ${Math.min(next + 1, b.steps.length)} of ${b.steps.length}</h2>
+      <ol class="lab built">${b.steps.slice(0, next).map(([t, why]) => `<li><b>${t}</b><br><span class="real">${why}</span></li>`).join("")}</ol>
+      ${msg || ""}
+      ${next < b.steps.length ? `<div class="choices">${order.filter(i => i >= next).map(i => `<button class="choice" data-s="${i}">${b.steps[i][0]}</button>`).join("")}</div>` : ""}
+      <div class="acts">${next >= b.steps.length ? `<button class="btn go" id="bBuildMore">Build another</button>` : ""}<button class="btn" id="bBuildList">All services</button></div>`, () => showBuilder(fromMenu));
+    for (const el of document.querySelectorAll(".choice[data-s]")) el.onclick = () => {
+      if (+el.dataset.s === next) { next++; if (next >= b.steps.length) { const d = store.get("loadrush-build", {}); d[b.id] = dayKey(); store.set("loadrush-build", d); track("build", b.id); draw(`<p><b>Built it${misses ? ` (${misses} wrong guess${misses > 1 ? "es" : ""})` : " with no wrong guesses"}.</b> ${b.part ? `Now try it in the game: the <b>${PARTS[b.part].name}</b>, or its lab in the Parts guide.` : "Try the lab in the Parts guide to do it for real."}</p>`); } else draw(); }
+      else { misses++; el.classList.add("wrong"); el.disabled = true; }
+    };
+    if ($("#bBuildMore")) $("#bBuildMore").onclick = () => showBuilder(fromMenu);
+    $("#bBuildList").onclick = () => showBuilder(fromMenu);
+  };
+  draw();
+}
 function showWords() {
   if (S) setRunning(false);
   openSheet(`<div class="kick">Words</div><h2>What the words mean</h2>
@@ -2650,6 +2731,7 @@ function showMenu() {
     <div class="levels">
       <button class="lv sand" data-i="tour"><span class="n">1 minute</span><span class="t">Tutorial</span><span class="d">A guided start on the first shift.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="guide"><span class="n">Read</span><span class="t">Parts guide</span><span class="d">What each part does: everyday comparison, real config, try-it-yourself lab.</span><span class="s">&nbsp;</span></button>
+      <button class="lv sand" data-i="build"><span class="n">${BUILDS.length} AWS services</span><span class="t">AWS Builder</span><span class="d">Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.</span><span class="s">&nbsp;</span></button>
       <button class="lv sand" data-i="quiz"><span class="n">8 questions</span><span class="t">Quiz</span><span class="d">Which part fixes this?</span><span class="s">${store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "&nbsp;"}</span></button>
     </div></div>
     <div class="msec"><h3>Play</h3>
@@ -2697,6 +2779,7 @@ function showMenu() {
   for (const b of document.querySelectorAll(".lv")) b.onclick = () => {
     if (b.dataset.i === "guide") { showGuide(true); return; }
     if (b.dataset.i === "quiz") { showQuiz(true); return; }
+    if (b.dataset.i === "build") { showBuilder(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }
