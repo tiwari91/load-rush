@@ -565,6 +565,10 @@ const PARTS = {
              what: "During a release it compares checkout success on the new version with the old one. If orders fall, it stops the rollout, even when every server says it is healthy. Works with Canary deploys." },
   breaker: { short: "Gives up quickly on slow outside services", name: "Timeouts + breaker", tag: "CB", zone: "app", cost: 0, boot: 1, max: 1, real: "a client timeout, resilience4j, Envoy outlier detection",
              what: "Stops waiting on a slow outside service after 1 second, then stops calling it for a while. Requests fail fast instead of piling up." },
+  nat: { short: "A way out to the internet in every zone", name: "NAT per zone", tag: "NAT", zone: "entry", cost: 1, boot: 3, max: 1, real: "an AWS NAT Gateway in each Availability Zone, each private subnet routed to its own zone's gateway",
+             what: "App servers reach outside services (payments, email) through a NAT gateway. Without this, the only one sits in zone A; with it, every zone has its own, so losing zone A does not cut zone B off." },
+  proxy: { short: "Keeps database connections working in a failover", name: "RDS Proxy", tag: "PX", zone: "data", cost: 2, boot: 3, max: 1, real: "Amazon RDS Proxy, PgBouncer with health checks",
+             what: "Holds the database connections for the app servers. When the database fails over, it moves them to the new primary itself, so the apps do not keep using dead connections." },
   cache: { short: "Remembers common answers",   name: "Cache",         tag: "C",   zone: "cache", cost: 3, boot: 3, max: 1, real: "Redis, ElastiCache",
              what: "Keeps answers to common reads in memory. Once warm, about 75% of reads never reach the database." },
   queue: { short: "Holds slow jobs to do later",   name: "Queue",         tag: "Q",   zone: "jobs",  cost: 1, boot: 2, max: 1, real: "SQS, RabbitMQ",
@@ -586,7 +590,7 @@ const PARTS = {
 };
 const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
 const APP_CAP = 150, DB_CAP = 400, REP_CAP = 300, WORKER_RATE = 15;
-const QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
+const NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
 
 /* ================================================================== shifts */
 const ramp = (t, t0, t1, a, b) => t <= t0 ? a : t >= t1 ? b : a + (b - a) * (t - t0) / (t1 - t0);
@@ -796,6 +800,22 @@ const LEVELS = [
     learned: ["Failures cluster: one problem often causes the next. Plan for the second one while fixing the first.",
               "Spare servers in both zones and a standby database are the two cheapest insurances against a bad night.",
               "Hands-on: run a game day: turn off one zone's servers in a test account and fail over the database while load runs."] },
+  { id: "gameday", watch: "Zone A is switched off on purpose at 0:35. Watch payments and the Database column, not only the server count.", staff: ["Zone A is down and the servers in zone B are healthy, but orders fail. Which shared things could still live in zone A?", "What happens to the app's open database connections and half-finished transactions when the database fails over?"], principal: ["You promised 99.99%. That is about 4 minutes of failure a month. How would you prove it before customers do?", "How do you find every single point of failure in a system you did not build?"],
+    name: "Game Day", duration: 110, cap: 50,
+    blurb: "Zone A goes dark. Zone B is healthy. Orders still fail.",
+    story: "The architecture review says you are spread over two zones, so you promised 99.99%. Today you prove it: zone A is switched off on purpose, a test called a game day. The servers in zone B are fine. But two shared things lived in zone A: the only NAT gateway (the door every payment call goes out through) and the primary database. Like a restaurant with two dining rooms and one kitchen door: close one room and the other still cannot get food out.",
+    brief: "About 300 visitors a second, 5% of them paying. At 0:35 zone A is switched off. You have three app servers in each zone, enough for zone B alone, and a standby database. The only NAT gateway is in zone A, and the app servers connect straight to the database.",
+    task: "Keep orders flowing when zone A is switched off.",
+    given: ["lb", "app", "app", "app", "app", "app", "app", "cache", "db", "standby"], tray: ["app", "auto", "nat", "proxy", "breaker"], fresh: ["nat", "proxy"], nat: true, pool: true,
+    traffic: t => T({ legit: ramp(t, 0, 50, 260, 320), payFrac: 0.05 }),
+    events: [{ t: 8, kind: "info", text: "Game day: at 0:35 zone A will be switched off on purpose. The review said \"we are multi-zone, AWS handles failover.\"", prep: ["nat", "proxy"], spare: 2, keys: ["natdown", "stalepool"] },
+             { t: 35, kind: "az-fail", text: "Game day: zone A is switched off." },
+             { t: 36, kind: "db-fail", text: "The primary database was in zone A." }],
+    learned: ["Multi-zone servers are not enough: look for anything that exists only once (a NAT gateway, a database primary, a cache node, a license server).",
+              "Give every zone its own way out: a NAT gateway per zone, with each zone's subnets routed to their own.",
+              "A database failover is quick, but apps holding old connections keep failing until they reconnect. A proxy or pool health checks hide the switch.",
+              "Prove availability with a game day before customers find the gap. 99.99% allows about 4 minutes of failure a month.",
+              "Hands-on (free, read-only): aws ec2 describe-nat-gateways and aws ec2 describe-route-tables. Check whether subnets in every zone send 0.0.0.0/0 to a gateway in one zone."] },
   { id: "release", watch: "A release at 0:15, a bot wave at 0:45 and a hotfix at 1:25. Roll back first, then fix.", staff: ["Two problems at once: which do you fix first, and how do you tell which one is hurting you?", "Should a hotfix skip the canary because it is urgent? What could go wrong?"], principal: ["Release weeks often collide with other events. How do you plan release calendars across teams?", "What would make 'roll back first' the automatic habit on every team?"],
     name: "Release Week", duration: 115, cap: 52,
     blurb: "A leaky release, a bot wave and a rushed hotfix.",
@@ -924,6 +944,12 @@ const ONCALL = {
     lesson: "Spread servers over two zones and keep enough spare room to lose one of them.",
     everyday: "Like a business with two branches where one floods: the other must serve everyone, so it needs spare room.",
     real: "AWS Availability Zones, Kubernetes topology spread" },
+  natzone: { title: "Zone outage, one NAT gateway", keys: ["natdown"], parts: ["app", "nat"], spare: 2, event: "az-fail", pay: true, nat: true,
+    forecast: at => `Cloud provider notice: zone A has a network problem at about ${clockText(at)}.`,
+    surprise: "Zone A just went dark.", page: "Zone A is down.",
+    lesson: "Spreading servers over zones is not enough: shared things like the NAT gateway must exist in every zone too.",
+    everyday: "Like two dining rooms that share one kitchen door: close the room with the door and nobody gets food.",
+    real: "a NAT Gateway per Availability Zone, Route 53 health checks, AWS Fault Injection Service game days" },
   crash: { title: "Server crash", keys: [], parts: ["app"], spare: 1, event: "crash",
     forecast: at => "One app server's health checks have been flaky all evening. It may not last the night.",
     surprise: "An app server just crashed.", page: "An app server crashed.",
@@ -1004,8 +1030,8 @@ function makeOnCall(day, practiceSeed) {
   const kinds = [], pool = Object.keys(ONCALL);
   while (kinds.length < n) {
     const k = pick(pool);
-    const rel = ["deploy", "leak", "quiet"];
-    if (kinds.includes(k) || (rel.includes(k) && kinds.some(x => rel.includes(x)))) continue;   // one release per shift
+    const rel = ["deploy", "leak", "quiet"], zones = ["zone", "natzone"];
+    if (kinds.includes(k) || (rel.includes(k) && kinds.some(x => rel.includes(x))) || (zones.includes(k) && kinds.some(x => zones.includes(x)))) continue;   // one release, one zone outage per shift
     kinds.push(k);
   }
   const gap = (duration - 45) / n;
@@ -1038,7 +1064,7 @@ function makeOnCall(day, practiceSeed) {
   events.sort((a, b) => a.t - b.t);
   const peak = co.base * 1.25 + (kinds.includes("spike") ? 460 : 0) + (kinds.includes("images") ? 80 : 0);
   const extra = [...new Set(incidents.flatMap(x => x.parts))].reduce((a, t) => a + PARTS[t].cost * (t === "worker" ? 2 : 1), 0);
-  const cap = Math.round(2 + 6 + 3 + 4 * Math.ceil(peak / 125) + extra + 8 + (kinds.includes("zone") ? 10 : 0));
+  const cap = Math.round(2 + 6 + 3 + 4 * Math.ceil(peak / 125) + extra + 8 + (kinds.includes("zone") || kinds.includes("natzone") ? 10 : 0));
   const tray = [...new Set(["app", "auto", "cache", "replica", ...incidents.flatMap(x => x.parts), ...(kinds.includes("checkout") ? ["queue", "worker"] : [])])];
   const date = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
   return {
@@ -1048,7 +1074,7 @@ function makeOnCall(day, practiceSeed) {
     brief: `You are on call tonight for <b>${co.name}</b>, ${co.what}. About ${co.base} visitors a second, climbing slowly. ${n} things will go wrong in the next 3 minutes. Some were announced; some were not.`,
     task: "Keep the site up for the whole shift. Fix each problem before the help card has to step in for more points.",
     given: ["lb", ...Array(Math.max(2, Math.ceil(co.base * 1.25 / (APP_CAP * 0.85)))).fill("app"), "db"], tray, fresh: [], traffic, events,
-    learned: incidents.map(x => x.lesson), staff: [], principal: [],
+    learned: incidents.map(x => x.lesson), staff: [], principal: [], nat: incidents.some(x => x.nat),
   };
 }
 let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, heavyFrac: 0, payFrac: 0 };
@@ -1082,6 +1108,20 @@ const PROBLEMS = [
     teach: { deeper: "Roll back first, find the cause second. Database changes need two steps (add the new, then remove the old) so the old version keeps working.", title: "Errors started with the release", diagram: [["Release v2.5", "just went out", "hot"], ["All app servers", "9% of requests fail", "hot"], ["Users", "see errors", "hot"]],
     explain: "Nothing else changed: traffic is normal, servers are not busy. Errors jumped the second the new version went out. The change is the most likely cause.",
     q: "What do you do first?", options: [["Roll back the release", true, "Yes. Restore service first, debug later. Next time, a canary would limit the damage to 10% of users."], ["Add more app servers", false, "More servers run the same broken code. Errors stay the same."], ["Restart the database", false, "The database is fine. Changing healthy parts during an incident makes things worse."]] } },
+  { key: "natdown", name: "Single NAT gateway",
+    when: (m, apps, r) => m.natDown,
+    text: (m, apps, r) => `Zone A is down. Your zone B servers are healthy, but ${Math.round(m.pay)} payments a second fail: every call out to the payment provider went through the NAT gateway in zone A.`,
+    fix: "Add <b>NAT per zone</b> so zone B has its own way out.",
+    teach: { deeper: "Check route tables, not just server counts: every private subnet should send outbound traffic to a NAT gateway in its own zone.", title: "Healthy servers, no way out", diagram: [["Zone B servers", "healthy"], ["NAT gateway", "in zone A: gone", "hot"], ["Payments", "all fail", "hot"]],
+    explain: "The servers in zone B are fine and pages load. But payments are calls out to the internet, and the only NAT gateway was in zone A. Multi-zone servers still shared one door.",
+    q: "What fixes it?", options: [["A NAT gateway in zone B", true, "Yes. Each zone needs its own way out, with its subnets routed to it."], ["More app servers in zone B", false, "They would use the same missing door."], ["Fail over the database again", false, "The database is not the problem here: outbound calls are."]] } },
+  { key: "stalepool", name: "Stale database connections",
+    when: (m, apps, r) => S.staleLeft > 0,
+    text: (m, apps, r) => "The standby is the new primary, but app servers still use connections to the old one. Some queries hang and fail until the pools reconnect.",
+    fix: "Add <b>RDS Proxy</b>: it moves the connections to the new primary.",
+    teach: { deeper: "Short connection lifetimes, pool health checks and retrying safe queries help too. Writes that were half done need to be idempotent so a retry is safe.", title: "The database moved, the connections did not", diagram: [["App servers", "old connections"], ["Old primary", "gone", "hot"], ["New primary", "ready, unused"]],
+    explain: "Multi-AZ failover finished in seconds, but each app server keeps a pool of open connections. Those still point at the dead primary until they time out and reconnect.",
+    q: "What makes the next failover invisible?", options: [["A connection proxy (RDS Proxy)", true, "Yes. The apps talk to the proxy, and the proxy reconnects to the new primary for them."], ["A bigger database", false, "Size does not change where the connections point."], ["A read replica", false, "Writes and these stale connections still go to the primary."]] } },
   { key: "quiet", name: "Quiet bad release",
     when: (m, apps, r) => r && r.kind === "quiet" && r.share >= 1 && !r.rollbackLeft && r.age > 2,
     text: (m, apps, r) => `Every server is healthy and pages load, but only ${Math.round(m.ordOk * 100)}% of checkouts finish since the new version went out.`,
@@ -1274,11 +1314,16 @@ function tickIncidents(dt) {
     S.dbDown -= dt;
     if (S.dbDown <= 0) {
       S.dbDown = 0;
+      const promoted = !!S.failoverTo;
       if (S.failoverTo) { S.pieces = S.pieces.filter(p => p.id !== S.failoverTo); S.failoverTo = null; log("good", "The standby is now the primary. Add a new standby to be safe again."); }
+      if (promoted && L.pool && !has("proxy")) { S.staleLeft = STALE_TIME; log("page", "But the app servers still hold connections to the old primary. Some queries hang and fail until the pools reconnect (about 15s), and half-done transactions were lost."); }
+      else if (promoted && L.pool) log("good", "RDS Proxy moved every connection to the new primary. The app servers did not notice the switch.");
       else log("good", "Primary database restored from backup.");
       renderBoard();
     }
   }
+  if (S.staleLeft > 0) { S.staleLeft = has("proxy") ? 0 : S.staleLeft - dt; if (S.staleLeft <= 0) { S.staleLeft = 0; log("good", "The connection pools have reconnected to the new primary."); } }
+  if (L.nat && S.azDown > 0 && !S.natTold && S.m && S.m.pay > 0) { S.natTold = true; if (has("nat")) log("good", "Payment calls from zone B leave through zone B's own NAT gateway. Payments keep working."); else log("page", "Zone B's servers are healthy, but every payment call fails: they all left through the NAT gateway in zone A."); }
   if (S.azDown > 0) { S.azDown -= dt; if (S.azDown <= 0) { S.azDown = 0; log("good", "Zone A is back."); } }
   if (S.partnerSlow > 0) { S.partnerSlow -= dt; if (S.partnerSlow <= 0) { S.partnerSlow = 0; log("good", "The payment provider is fast again."); } }
   const r = S.release; if (!r) return;
@@ -1335,6 +1380,8 @@ function step(dt) {
   const pay = dynLegit * tr.payFrac;
   let payQueued = 0, payFailed = 0, payStuck = 0;
   if (S.partnerSlow > 0 && pay > 0) { if (!breaker) payStuck = pay; else if (queue) payQueued = pay; else payFailed = pay; }
+  const natDown = !!(L.nat && S.azDown > 0 && pay > 0 && !has("nat"));   // the only NAT gateway was in zone A: payment calls cannot get out
+  if (natDown) { payFailed = Math.max(payFailed, pay * NAT_FAIL); payStuck = 0; payQueued = 0; }
   // app tier
   const slowCost = queue ? heavy * 0.3 : heavy * 5;
   const appLoad = (dynLegit - heavy) + botsPass + staticToApp * 0.4 + slowCost + payStuck * 30;
@@ -1371,7 +1418,7 @@ function step(dt) {
     const fD = primLoad <= DB_CAP ? 0 : 1 - DB_CAP / primLoad;
     failedDb = (writes + reads - readsOnRep) * fD; uD = primLoad / DB_CAP;
   } else failedDb = writes + (reads - readsOnRep);
-  const dbFailShare = servedDyn > 0 ? Math.min(1, failedDb / servedDyn) : 0;
+  const dbFailShare = Math.min(1, (servedDyn > 0 ? failedDb / servedDyn : 0) + (S.staleLeft > 0 ? STALE_FAIL : 0));   // stale pools: connections still point at the old primary
   const uR = repCap ? readsOnRep / repCap : 0;
 
   // what users feel
@@ -1404,6 +1451,7 @@ function step(dt) {
   autoscale(dt, uA, nApp);
 
   S.peak = Math.max(S.peak, legit + bots); S.worstP95 = Math.max(S.worstP95, p95);
+  S.lostOrders = (S.lostOrders || 0) + quietLost * pay * dt;
   S.failed += failedLegit * dt; S.total += legit * dt; S.spendSec += spendRate() * dt;
   const sec = Math.floor(S.t + 1e-6);   // whole seconds: adding 0.1 ten times never quite reaches 1.0
   if (sec !== S.tlSec) { S.tlSec = sec; S.timeline.push({ t: S.t, b: S.budget, bad: burn > 0 }); }
@@ -1421,7 +1469,7 @@ function step(dt) {
   S.m = { tr, legit, bots, botsPass, staticReq, dynLegit, cdnServed, staticToApp, heavy, pay, payStuck, payQueued, payFailed,
     lb, nApp, used, health, capA, appLoad, uA, fA, bugFail, cache, hit, readsAll, reads, writes, jobWrites, jobsIn, jobsDone,
     workers, queue, reps, repCap, readsOnRep, primLoad, uD, uR, dbUp, failApp, failDb, failBug, qFail, failedLegit, err,
-    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, burn, drop, out, cdn, waf, breaker };
+    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, natDown, burn, drop, out, cdn, waf, breaker };
   coach(dt);
 
   if (!L.sandbox) {
@@ -1643,6 +1691,7 @@ const SKILLS = [
   { id: "analysis", name: "Judging a release by orders", keys: ["quiet"], level: "quiet", part: "analysis", how: "Stop a release that breaks checkout while every server looks healthy." },
   { id: "leak", name: "Spotting a memory leak", keys: ["leak"], level: "leak", how: "See that a release slowly chokes servers, and roll it back." },
   { id: "failover", name: "Database failover", keys: ["dbdown"], level: "failover", how: "Have a standby ready before the database dies." },
+  { id: "spof", name: "Finding hidden single points", keys: ["natdown", "stalepool"], level: "gameday", how: "Keep orders flowing when a zone dies, including the shared parts that lived there." },
   { id: "zones", name: "Surviving a zone outage", keys: ["azdown"], level: "zone", how: "Keep enough servers to lose half of them at once." },
   { id: "timeout", name: "Timeouts and circuit breakers", keys: ["partner"], level: "partner", how: "Stop a slow outside service from tying up your servers." },
   { id: "auto", name: "Autoscaling", keys: [], level: "sale", part: "auto", how: "Win a shift with an autoscaler adding servers for you." },
@@ -1905,6 +1954,8 @@ const READ_MORE = {
   app: ["Kubernetes Deployments", "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"],
   auto: ["Kubernetes autoscaling (HPA)", "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/"],
   canary: ["Canary releases in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/canary/"],
+  nat: ["NAT gateways in Amazon VPC", "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html"],
+  proxy: ["Amazon RDS Proxy", "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html"],
   analysis: ["Analysis and progressive delivery in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/analysis/"],
   breaker: ["Circuit breaker, by Martin Fowler", "https://martinfowler.com/bliki/CircuitBreaker.html"],
   cache: ["Caching, AWS overview", "https://aws.amazon.com/caching/"],
@@ -1921,6 +1972,8 @@ const WRONG_FIX = {
   app: "When the database is the slow part, more app servers just send it more work.",
   auto: "It reacts after load rises, and each new server needs seconds to start. For a peak you know about, add servers before it.",
   canary: "Rarely wrong: on a busy site it is cheap insurance for every release.",
+  nat: "Not needed when servers have public addresses or reach outside services through VPC endpoints. It also costs money per zone and per gigabyte, so count your outbound traffic.",
+  proxy: "Adds a small delay to every query and costs extra. A small app with short-lived connections and retries may not need it.",
   analysis: "Useless until something measures the business: first count orders (or payments, sign-ups) per version, then let the release watch that number.",
   breaker: "If the outside service is fast and reliable, a timeout that is too short fails good requests.",
   cache: "Data that must be exact this second (stock left at checkout) should skip the cache or expire quickly.",
@@ -2412,6 +2465,11 @@ const WORDS = [
   ["Health check", "A quick test the load balancer runs on each server. A server that fails it stops getting traffic."],
   ["Batch job", "Bulk work run in one go (imports, reports, backups). Best done when the site is quiet."],
   ["Canary", "Sending a new version to a small share of users first, to catch problems before everyone sees them."],
+  ["NAT gateway", "The door private servers use to call the internet (payments, email). If there is only one, it is in one zone, and losing that zone shuts the door for all."],
+  ["Connection pool", "A set of open database connections an app keeps ready. Fast, but after a failover they can still point at the old database."],
+  ["Single point of failure", "Anything that exists only once, so losing it takes everything down: one NAT gateway, one primary, one person who knows the password."],
+  ["Game day", "A planned test where you break something on purpose (switch off a zone, kill the database) to prove the system survives it."],
+  ["Nines", "Availability written as a percentage. 99.9% allows about 43 minutes of failure a month, 99.99% about 4 minutes."],
   ["Canary analysis", "Comparing the new version with the old one on real numbers (orders, errors, speed) before sending it to everyone."],
   ["Readiness check", "A question the platform asks each server: are you up and able to take visitors? It says nothing about whether the code does the right thing."],
   ["Business metric", "A number the business cares about, like orders, payments or sign-ups a minute. The best early warning of a bad release that breaks nothing technical."],
@@ -2443,6 +2501,25 @@ spec:
   metrics:
     - type: Resource
       resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }`],
+  nat: ["Terraform", `resource "aws_nat_gateway" "per_zone" {
+  for_each      = aws_subnet.public          # one per zone
+  subnet_id     = each.value.id
+  allocation_id = aws_eip.nat[each.key].id
+}
+resource "aws_route" "out" {
+  for_each               = aws_route_table.private   # one per zone
+  route_table_id         = each.value.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.per_zone[each.key].id
+}`],
+  proxy: ["Terraform", `resource "aws_db_proxy" "app" {
+  name           = "app-db"
+  engine_family  = "POSTGRESQL"
+  role_arn       = aws_iam_role.proxy.arn
+  vpc_subnet_ids = aws_subnet.private[*].id
+  auth { secret_arn = aws_secretsmanager_secret.db.arn }
+}
+# apps connect to aws_db_proxy.app.endpoint, not to the database`],
   analysis: ["Argo Rollouts AnalysisTemplate", `kind: AnalysisTemplate
 spec:
   metrics:
@@ -2508,6 +2585,8 @@ const LABS = {
   lb: ["Free, on your laptop (Docker)", ["Start two copies of a tiny web app: docker run -d -p 8081:80 --name a nginxdemos/hello and the same with 8082 and name b.", "Write an nginx.conf with an upstream block listing localhost:8081 and localhost:8082 (see the config above).", "Run nginx with that config on port 8080 and open http://localhost:8080 several times.", "Watch the server name change between a and b: requests are being shared.", "Stop container a (docker stop a) and refresh: nginx keeps sending you to b."]],
   app: ["Free, on your laptop (kind)", ["Install kind and kubectl, then run kind create cluster.", "kubectl create deployment web --image=nginxdemos/hello --replicas=3", "kubectl get pods -o wide: three copies of the same app.", "kubectl delete pod <one of them> and watch Kubernetes start a new one at once.", "kubectl delete deployment web when you are done."]],
   auto: ["Free, on your laptop (kind)", ["Install metrics-server in your kind cluster (its README has a kind flag: --kubelet-insecure-tls).", "Create a Deployment with a CPU request, then kubectl autoscale deployment web --cpu-percent=60 --min=1 --max=5.", "Generate load with a busybox pod running a wget loop against the service.", "Watch kubectl get hpa -w: replicas rise as CPU climbs, then fall a few minutes after you stop."]],
+  nat: ["Free, read-only, on any AWS account", ["Run: aws ec2 describe-nat-gateways --query 'NatGateways[].{id:NatGatewayId,subnet:SubnetId,state:State}'", "Run: aws ec2 describe-subnets to see which zone each NAT gateway's subnet is in.", "Run: aws ec2 describe-route-tables and look at the 0.0.0.0/0 route of each private route table.", "If private subnets in zone B point at a gateway in zone A, you have found a single point of failure. Nothing here creates or costs anything."]],
+  proxy: ["Free, on your laptop (Docker)", ["Start PostgreSQL and PgBouncer with docker compose; point a small script at PgBouncer that runs a query every second.", "Restart the PostgreSQL container and watch the script: PgBouncer reconnects and the script carries on after a short pause.", "Now point the script straight at PostgreSQL and restart it again: the script's open connection breaks until it reconnects.", "Clean up: docker compose down."]],
   analysis: ["Free, on your laptop (kind + Prometheus)", ["Install Argo Rollouts and the kube-prometheus-stack chart in a kind cluster.", "Make a tiny app that counts checkout_started_total and orders_saved_total, labelled with its version.", "Release it as a Rollout with a canary step at 10% and the AnalysisTemplate above.", "Release a version that returns 200 but skips saving the order. Watch the analysis fail and the rollout abort, while every Pod stays Ready.", "Clean up: kind delete cluster."]],
   canary: ["Free, on your laptop (kind)", ["Run version 1 as a Deployment behind a Service.", "Change the image tag and run kubectl rollout status deployment/web to watch the rollout.", "Break it on purpose (use an image tag that does not exist) and see pods fail.", "Fix it in one command: kubectl rollout undo deployment/web. That is a rollback.", "Next step: install Argo Rollouts and use the canary steps shown above."]],
   breaker: ["Free, any language", ["Call a slow test URL: https://httpbin.org/delay/8 (it answers after 8 seconds).", "Add a 1-second timeout to the call (requests.get(url, timeout=1) in Python) and see it fail fast.", "Wrap it in a counter: after 5 failures in a row, skip the call for 30 seconds and return an error at once.", "That counter is a circuit breaker. Libraries such as resilience4j (Java) or pybreaker (Python) do it for you."]],
@@ -2532,7 +2611,7 @@ const EXTRA_GUIDE = [
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
-const GUIDE_ORDER = ["cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
+const GUIDE_ORDER = ["cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
 const PART_GUIDE = {
   cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
     example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
@@ -2552,6 +2631,12 @@ const PART_GUIDE = {
   auto: { everyday: "A manager who calls in extra cashiers when the line gets long and sends them home when it is quiet.",
     example: "A rule says: keep app servers around 60% busy. At 9 am traffic doubles, it adds two servers (each takes a few seconds to start); at midnight it removes them to save money.",
     use: "Traffic that rises and falls during the day. For a known spike, scale up before it, because new servers need time to boot." },
+  nat: { everyday: "Two dining rooms need two kitchen doors: if the only door is in the room that floods, nobody gets food.",
+    example: "Zone A goes down. App servers in zone B are healthy, but every payment call fails because the only NAT gateway was in zone A. With a gateway in each zone, zone B carries on.",
+    use: "Whenever servers in private subnets call anything outside (payments, email, other companies' APIs) and you run in more than one zone." },
+  proxy: { everyday: "A switchboard operator: when the office moves, callers keep dialling the same number and the operator connects them to the new desk.",
+    example: "RDS Multi-AZ fails over in about 30 seconds in real life. Apps that connect through RDS Proxy keep working; apps with their own pools keep using dead connections until they time out.",
+    use: "Busy apps, Lambda functions that open many connections, and anything where a failover must be invisible." },
   analysis: { everyday: "Tasting the new recipe's sales, not just checking the oven is hot: if fewer people finish their plate on the new menu, you switch back.",
     example: "Version 4.2 goes to 10% of users. Every Pod is Ready and no page fails, but only 60% of its checkouts save an order against 99% on the old version. The analysis fails and the rollout stops at 10%.",
     use: "With every canary on anything that takes money or sign-ups. Without it, a canary only catches crashes and errors, not wrong behaviour." },
@@ -2641,6 +2726,10 @@ const QUIZ = [
     why: "A timeout and circuit breaker stop waiting and fail fast, so your servers stay free for everyone else." },
   { q: "Half of all requests are images and CSS files that are the same for every visitor.", a: "cdn", opts: ["cache", "cdn", "replica"],
     why: "A CDN serves files that never change from near the user, so they never reach your app." },
+  { q: "Zone A is down. All servers in zone B are healthy and pages load, but every payment fails.", a: "nat", opts: ["nat", "app", "replica"],
+    why: "Payment calls go out through a NAT gateway. If the only one was in zone A, zone B has no way out. Give each zone its own." },
+  { q: "The database failed over in seconds, but for the next 15 seconds some queries hang and fail.", a: "proxy", opts: ["proxy", "standby", "cache"],
+    why: "The app servers still hold connections to the old primary. A proxy moves them to the new one, so apps do not notice the switch." },
   { q: "A release passed every test and every server is healthy, but orders fell 40% right after it went out. No page failed.", a: "analysis", opts: ["analysis", "app", "breaker"],
     why: "Healthy servers and zero errors say nothing about orders. Canary analysis compares orders on the new version with the old one and stops the rollout." },
   { q: "Each release has a 1-in-10 chance of breaking checkout, and you release every day.", a: "canary", opts: ["canary", "standby", "waf"],
@@ -2952,7 +3041,7 @@ function setup(level) {
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
 const SHIFT_BUILD = { launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
-const FIX_PART = { quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+const FIX_PART = { natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
   for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
@@ -3016,8 +3105,10 @@ function end(win) {
       <div><small>Peak traffic</small><b>${Math.round(S.peak)}/s</b></div>
       <div><small>Slowest page speed</small><b>${Math.round(S.worstP95)} ms</b></div>
       <div><small>Failed pages</small><b>${errPct.toFixed(2)}%</b></div>
+      ${S.lostOrders >= 1 ? `<div><small>Orders lost (pages looked fine)</small><b>${Math.round(S.lostOrders)}</b></div>` : ""}
       <div><small>Average cost</small><b>$${avgSpend.toFixed(1)}/h</b><small>about $${perMonth(avgSpend)} a month</small></div>
     </div>
+    ${L.sandbox ? "" : `<p class="real">Availability this shift: <b>${(100 - errPct).toFixed(2)}%</b>. A 99.99% promise allows about 4 minutes of failure a month; at this shift's rate a month would have about ${errPct / 100 * 43200 >= 120 ? Math.round(errPct / 100 * 720) + " hours" : Math.round(errPct / 100 * 43200) + " minutes"}.</p>`}
     ${win && st < 3 && !oc ? `<p class="real">3 stars: finish with 70%+ budget and average spend under $${Math.floor(L.cap * 0.85)}/h.</p>` : ""}
     ${win && !oc && !L.sandbox ? (() => { const med = costMedal(avgSpend, L.cap), all = store.get("loadrush-cost", {}), rank = n => n ? 3 - COST_MEDALS.findIndex(([x]) => x === n) : 0;
       if (med && rank(med) > rank(all[L.id])) { all[L.id] = med; store.set("loadrush-cost", all); }

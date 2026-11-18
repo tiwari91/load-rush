@@ -4,7 +4,7 @@ A browser game about keeping a website up while traffic changes in real time.
 
 **Play:** https://tiwari91.github.io/load-rush/
 
-Requests flow through your system as moving dots. Drag parts onto the board (load balancer, auto-renewing HTTPS certificates, app servers, autoscaler, cache, read replicas, standby database, CDN, rate limiter, queue and workers, canary deploys, canary analysis that watches orders, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
+Requests flow through your system as moving dots. Drag parts onto the board (load balancer, auto-renewing HTTPS certificates, a NAT gateway in every zone, app servers, autoscaler, cache, read replicas, standby database, RDS Proxy, CDN, rate limiter, queue and workers, canary deploys, canary analysis that watches orders, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
 
 ## Shifts
 
@@ -28,8 +28,9 @@ Releases and failures:
 Big days:
 14. Payday Rush: salary day payments, then the payment network slows
 15. Storm Night: a zone goes down, then the database dies
-16. Release Week: a leaky release, a bot wave and a rushed hotfix
-17. Black Friday: everything at once
+16. Game Day: zone A is switched off on purpose; zone B is healthy, but payments and the database connections still depended on zone A
+17. Release Week: a leaky release, a bot wave and a rushed hotfix
+18. Black Friday: everything at once
 
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 
@@ -38,7 +39,7 @@ There is also a Sandbox with traffic sliders, buttons to break things on purpose
 ## On call (a new shift every day)
 
 The top of the menu has **tonight's on-call shift**: a made-up company, 3 incidents (4 at weekends) drawn from
-the game's own problems (now including a surprise server crash and a quiet bad release that only shows in orders), and the same shift for everyone on the same day. A **handover note** announces some
+the game's own problems (now including a surprise server crash, a quiet bad release that only shows in orders, and a zone outage with only one NAT gateway), and the same shift for everyone on the same day. A **handover note** announces some
 incidents; others are a surprise. Halfway through, someone asks you for a **decision** (send the marketing email
 now? cut the budget? release a fix mid-shift? switch the cache off for fresh prices? let a partner run a bulk import at peak time? rename a database column in the same release as the code?). Afterwards you get **points**, an **incident report** (what
 happened, what it cost, how you handled it, the lesson, and the real-world tools), your streak, and a result
@@ -56,7 +57,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Challenge a friend:** after winning a shift, copy a link with your score; whoever opens it sees the challenge on the menu.
 - **It really happened:** eight shift briefs link a real outage with the same lesson and the company's own write-up (Knight Capital 2012, Slack 2021, Cloudflare 2019, Facebook 2021, GitHub 2018, Amazon S3 2017, AWS us-east-1 2021, Fastly 2021).
 - **Interview practice:** senior and staff-level questions from every shift, one at a time, with the points a good answer covers.
-- **Quiz: which part fixes this?** Eight short scenarios; each answer explains why and gives the everyday comparison.
+- **Quiz: which part fixes this?** Thirteen short scenarios; each answer explains why and gives the everyday comparison.
 
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.
 
@@ -68,10 +69,10 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Teach mode** pauses the game when something goes wrong, shows a small diagram, and asks what you would do.
 - **Part cards:** click any part on the board to see what it does, what it costs, when it is the wrong fix, and
   its real-world name.
-- **Learning path:** 14 skills (scaling out, caching, CDN, rate limiting, queues, canaries, judging a release by orders, failover, zones,
+- **Learning path:** 15 skills (scaling out, caching, CDN, rate limiting, queues, canaries, judging a release by orders, failover, zones, finding hidden single points,
   timeouts, autoscaling, cost, judgement), each ticked off the first time you show it in a shift.
 - **Who is playing:** Mid-level gets hints; Staff and Principal get fewer hints and discussion questions after each shift.
-- **After each shift:** a chart of site health with what happened and what you did, plus the problem that hurt most and its fix.
+- **After each shift:** a chart of site health with what happened and what you did, plus the problem that hurt most and its fix, and the shift's availability as a percentage, with what that would mean over a month against a 99.99% promise.
 - **Words:** a plain glossary of every term in the game.
 - **Presenter mode:** bigger text for a projector or screen share.
 - **Inspector:** click any column or chart to see the numbers behind it.
