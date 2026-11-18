@@ -4,7 +4,7 @@ A browser game about keeping a website up while traffic changes in real time.
 
 **Play:** https://tiwari91.github.io/load-rush/
 
-Requests flow through your system as moving dots. Drag parts onto the board (load balancer, auto-renewing HTTPS certificates, app servers, autoscaler, cache, read replicas, standby database, CDN, rate limiter, queue and workers, canary deploys, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
+Requests flow through your system as moving dots. Drag parts onto the board (load balancer, auto-renewing HTTPS certificates, app servers, autoscaler, cache, read replicas, standby database, CDN, rate limiter, queue and workers, canary deploys, canary analysis that watches orders, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
 
 ## Shifts
 
@@ -23,12 +23,13 @@ Releases and failures:
 10. Slow Partner: an outside payment API hangs
 11. Cache Restart: the cache comes back empty, twice (a cache stampede)
 12. Expired Certificate: a date nobody remembered takes the site down
+13. Green Pipeline: every check passes, every server is healthy, and checkout is still broken
 
 Big days:
-13. Payday Rush: salary day payments, then the payment network slows
-14. Storm Night: a zone goes down, then the database dies
-15. Release Week: a leaky release, a bot wave and a rushed hotfix
-16. Black Friday: everything at once
+14. Payday Rush: salary day payments, then the payment network slows
+15. Storm Night: a zone goes down, then the database dies
+16. Release Week: a leaky release, a bot wave and a rushed hotfix
+17. Black Friday: everything at once
 
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 
@@ -37,9 +38,9 @@ There is also a Sandbox with traffic sliders, buttons to break things on purpose
 ## On call (a new shift every day)
 
 The top of the menu has **tonight's on-call shift**: a made-up company, 3 incidents (4 at weekends) drawn from
-the game's own problems (now including a surprise server crash), and the same shift for everyone on the same day. A **handover note** announces some
+the game's own problems (now including a surprise server crash and a quiet bad release that only shows in orders), and the same shift for everyone on the same day. A **handover note** announces some
 incidents; others are a surprise. Halfway through, someone asks you for a **decision** (send the marketing email
-now? cut the budget? release a fix mid-shift? switch the cache off for fresh prices? let a partner run a bulk import at peak time?). Afterwards you get **points**, an **incident report** (what
+now? cut the budget? release a fix mid-shift? switch the cache off for fresh prices? let a partner run a bulk import at peak time? rename a database column in the same release as the code?). Afterwards you get **points**, an **incident report** (what
 happened, what it cost, how you handled it, the lesson, and the real-world tools), your streak, and a result
 you can copy and share. **Practice on call** gives random shifts as often as you like.
 
@@ -53,7 +54,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Cost challenge:** win a shift under 80%, 90% or 100% of its spend limit for a Gold, Silver or Bronze cost medal, shown on the shift card.
 - **Write-up practice:** after an On call shift, write the 3-line incident summary yourself, then compare it with a model answer built from your shift.
 - **Challenge a friend:** after winning a shift, copy a link with your score; whoever opens it sees the challenge on the menu.
-- **It really happened:** seven shift briefs link a real outage with the same lesson and the company's own write-up (Slack 2021, Cloudflare 2019, Facebook 2021, GitHub 2018, Amazon S3 2017, AWS us-east-1 2021, Fastly 2021).
+- **It really happened:** eight shift briefs link a real outage with the same lesson and the company's own write-up (Knight Capital 2012, Slack 2021, Cloudflare 2019, Facebook 2021, GitHub 2018, Amazon S3 2017, AWS us-east-1 2021, Fastly 2021).
 - **Interview practice:** senior and staff-level questions from every shift, one at a time, with the points a good answer covers.
 - **Quiz: which part fixes this?** Eight short scenarios; each answer explains why and gives the everyday comparison.
 
@@ -67,7 +68,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Teach mode** pauses the game when something goes wrong, shows a small diagram, and asks what you would do.
 - **Part cards:** click any part on the board to see what it does, what it costs, when it is the wrong fix, and
   its real-world name.
-- **Learning path:** 13 skills (scaling out, caching, CDN, rate limiting, queues, canaries, failover, zones,
+- **Learning path:** 14 skills (scaling out, caching, CDN, rate limiting, queues, canaries, judging a release by orders, failover, zones,
   timeouts, autoscaling, cost, judgement), each ticked off the first time you show it in a shift.
 - **Who is playing:** Mid-level gets hints; Staff and Principal get fewer hints and discussion questions after each shift.
 - **After each shift:** a chart of site health with what happened and what you did, plus the problem that hurt most and its fix.

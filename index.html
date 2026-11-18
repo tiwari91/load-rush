@@ -502,14 +502,14 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
       <button class="tile" data-insp="budget">
         <span class="label">Site health</span><span class="val" id="budgetV">100%</span>
         <span class="bar"><i id="budgetBar" style="width:100%"></i></span>
-        <span class="hint">Drops when pages fail or load slowly. At 0% you lose.</span>
+        <span class="hint">Drops when pages fail, load slowly or orders are lost. At 0% you lose.</span>
       </button>
       <button class="tile" data-insp="p95">
         <span class="label">Page speed</span><span class="val"><span id="p95V">0 ms</span> <em id="p95W">fast</em></span>
         <canvas id="cP95"></canvas><span class="hint">Slow means over 800 ms.</span>
       </button>
       <button class="tile" data-insp="err">
-        <span class="label">Failed pages</span><span class="val" id="errV">0.0%</span>
+        <span class="label">Failed pages</span><span class="val"><span id="errV">0.0%</span> <em id="ordW" title="Share of checkouts that end with a saved order"></em></span>
         <canvas id="cErr"></canvas><span class="hint">Keep it under 1%.</span>
       </button>
       <button class="tile" data-insp="users">
@@ -561,6 +561,8 @@ const PARTS = {
              what: "Adds app servers when they are busy and removes extra ones when quiet. Stays inside your spend limit." },
   canary: { short: "Tries new versions on 10% of visitors first",  name: "Canary deploys", tag: "CY", zone: "app",   cost: 0, boot: 1, max: 1, real: "Argo Rollouts, CodeDeploy canary",
              what: "New versions go to one server (about 10% of users) first. If errors or memory jump, it rolls back by itself." },
+  analysis: { short: "Checks orders, not just healthy servers", name: "Canary analysis", tag: "KPI", zone: "app", cost: 0, boot: 1, max: 1, real: "Argo Rollouts AnalysisTemplate, Flagger, Kayenta",
+             what: "During a release it compares checkout success on the new version with the old one. If orders fall, it stops the rollout, even when every server says it is healthy. Works with Canary deploys." },
   breaker: { short: "Gives up quickly on slow outside services", name: "Timeouts + breaker", tag: "CB", zone: "app", cost: 0, boot: 1, max: 1, real: "a client timeout, resilience4j, Envoy outlier detection",
              what: "Stops waiting on a slow outside service after 1 second, then stops calling it for a while. Requests fail fast instead of piling up." },
   cache: { short: "Remembers common answers",   name: "Cache",         tag: "C",   zone: "cache", cost: 3, boot: 3, max: 1, real: "Redis, ElastiCache",
@@ -584,7 +586,7 @@ const PARTS = {
 };
 const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
 const APP_CAP = 150, DB_CAP = 400, REP_CAP = 300, WORKER_RATE = 15;
-const BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
+const QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
 
 /* ================================================================== shifts */
 const ramp = (t, t0, t1, a, b) => t <= t0 ? a : t >= t1 ? b : a + (b - a) * (t - t0) / (t1 - t0);
@@ -748,6 +750,21 @@ const LEVELS = [
               "Automate renewals (AWS Certificate Manager, Let's Encrypt with certbot) and alert well before any expiry date.",
               "If it happens anyway, renewing by hand is the first fix; then make sure it can never depend on one person's memory again.",
               "Hands-on: run certbot against a test domain, then check a site's expiry date with: openssl s_client -connect example.com:443 | openssl x509 -noout -enddate"] },
+  { id: "quiet", watch: "Version 4.2 goes out at 0:20. Watch \"checkouts OK\" next to Failed pages, not only the green servers.", staff: ["The pipeline was green and every Pod was Ready, yet orders failed. Which checks could have caught it, and at which stage?", "What numbers should decide whether a canary moves from 10% to 100%? How do you compare the new version with the old one fairly?"], principal: ["The new version also renames a database column. How do you release it so that rolling back is still safe?", "Who owns the business numbers a release is judged on, and how do they become part of every team's release process?"],
+    name: "Green Pipeline", duration: 100, cap: 40,
+    blurb: "Every check passes. Checkout is broken.",
+    story: "The new version builds, passes its tests and its security scan, and every server reports healthy. But a change in the order code means 4 in 10 payments go through without the order being saved. No page fails, so no error alarm goes off. Like a shop whose card machine beeps \"approved\" while the receipt printer silently stopped: the queue moves, the shop looks fine, and nobody gets their goods.",
+    brief: "Version 4.2 ships at 0:20. The pipeline is green: tests, image build, security scan, Helm deploy and readiness checks all passed. Your canary watches failed pages and server health. Nothing watches orders yet.",
+    task: "Keep orders flowing through the release.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "canary", "analysis"], fresh: ["analysis"],
+    traffic: t => T({ legit: ramp(t, 0, 60, 260, 320), payFrac: 0.1 }),
+    events: [{ t: 6, kind: "info", text: "Release manager: version 4.2 goes out at 0:20. Every check in the pipeline passed.", prep: ["canary", "analysis"], keys: ["quiet"] },
+             { t: 20, kind: "deploy-quiet", text: "Version 4.2 is out." }],
+    learned: ["A green pipeline proves the code built and started. It does not prove customers can still buy.",
+              "Readiness checks ask \"is the server up?\". Release checks must also ask \"is the business still working?\": orders, payments, sign-ups.",
+              "Let a canary move from 10% to 100% only when the new version's business numbers match the old version's. Argo Rollouts and Flagger do this with an analysis step.",
+              "Database changes need two releases (add the new column, later remove the old one), so a rollback never meets a database it cannot read.",
+              "Hands-on: add an AnalysisTemplate to an Argo Rollouts canary that queries a Prometheus success-rate metric, then release a version that returns 200 but drops orders."] },
   { id: "payday", watch: "Payments do slow work and call an outside payment network. At 0:50 that network slows down.", staff: ["A payment must not run twice. How do you make a queued payment safe to retry?", "What does the user see while a payment waits in the queue, and when do you tell them it failed?"], principal: ["Payday load is known months ahead. Who owns preparing for it: the product team, the platform team, or both?", "What do you promise customers about payment speed, and what does the payment network promise you?"],
     name: "Payday Rush", duration: 110, cap: 50,
     blurb: "Salary day: everyone pays bills at once.",
@@ -812,6 +829,7 @@ const LEVELS = [
 ];
 /* A real outage with the same lesson as each shift, with the company's own write-up. */
 const REAL_INCIDENTS = {
+  quiet: ["Knight Capital, 1 August 2012", "A new release reached the firm's trading servers, but one of eight servers still ran old code that the release woke up. Every system was running, and in 45 minutes it sent millions of unwanted orders. The firm lost more than $460 million.", "https://www.sec.gov/news/press-release/2013-222"],
   sale: ["Slack, 4 January 2021", "On the first working day after the holidays, everyone logged in at once. Part of Slack's cloud network could not scale fast enough for the surge, and many users could not connect.", "https://slack.engineering/slacks-outage-on-january-4th-2021/"],
   deploy: ["Cloudflare, 2 July 2019", "A new firewall rule was released to every server worldwide at once. It used up all the CPU, and sites behind Cloudflare returned errors until the rule was turned off globally.", "https://blog.cloudflare.com/details-of-the-cloudflare-outage-on-july-2-2019/"],
   release: ["Facebook, 4 October 2021", "A routine maintenance command cut off Facebook's network backbone, and a safety check that should have stopped it had a bug. Facebook, Instagram and WhatsApp were down for about six hours.", "https://engineering.fb.com/2021/10/05/networking-traffic/outage-details/"],
@@ -882,6 +900,12 @@ const ONCALL = {
     lesson: "Release to a few servers first (a canary), watch the errors, and roll back fast if they rise.",
     everyday: "Like changing a recipe for every table at once: try it on one table first (a canary), and switch back fast if people complain.",
     real: "Argo Rollouts, AWS CodeDeploy, feature flags" },
+  quiet: { title: "Quiet bad release", keys: ["quiet"], parts: ["canary", "analysis"], event: "deploy-quiet", pay: true,
+    forecast: at => `Version 6.${Math.round(at) % 9} goes out at about ${clockText(at)}. The pipeline is green.`,
+    surprise: "A release went out. Every check passed.", page: "A new version is out.",
+    lesson: "Judge a release by business numbers (orders, payments), not only by healthy servers and failed pages.",
+    everyday: "Like a card machine that beeps approved while the receipt printer has stopped: everything looks fine until customers ask where their goods are.",
+    real: "Argo Rollouts analysis, Flagger, Kayenta, Datadog or Prometheus alerts on order rate" },
   leak: { title: "Leaky release", keys: ["leak"], parts: ["canary"], event: "deploy-leak",
     forecast: at => `Version 5.0 goes out at about ${clockText(at)}. It is a big change.`,
     surprise: "A new version went out quietly an hour ago.", page: "A new version is out.",
@@ -963,6 +987,13 @@ const DECISIONS = {
         why: "Batch work belongs in quiet hours, or behind its own rate limit, so it never competes with customers." } ],
     lesson: "Schedule bulk jobs (imports, reports, backfills) for quiet hours, or give them their own rate limit." },
 };
+DECISIONS.migrate = { title: "Developer: rename a database column tonight?", ask: "Tonight's release renames the column total to amount, in the same release as the new code. The developer asks to ship both now.",
+  options: [
+    { label: "Ship code and rename together", pts: 0, run: () => { log("page", "The column was renamed. Servers still on the old code look for total and fail."); if (typeof fire === "function") fire("deploy-bug", "The new code and the renamed column went out together."); },
+      why: "Old servers (and any rollback) still read the old column. Code and schema changes that cannot run side by side turn a rollback into an outage." },
+    { label: "Add the new column first, remove the old one next week", pts: 100, run: () => log("info", "Tonight adds amount and writes to both columns. The old column goes once nothing reads it."),
+      why: "Expand, then contract: every version that might be running, including the one you roll back to, can still read the database." } ],
+  lesson: "Make database changes backward compatible: add first, move readers, remove last. Then a rollback is always safe." };
 function makeOnCall(day, practiceSeed) {
   const practice = practiceSeed != null, rand = seededRandom(practice ? practiceSeed : hashText("loadrush-oncall-" + day));
   const pick = arr => arr[Math.floor(rand() * arr.length)];
@@ -973,7 +1004,8 @@ function makeOnCall(day, practiceSeed) {
   const kinds = [], pool = Object.keys(ONCALL);
   while (kinds.length < n) {
     const k = pick(pool);
-    if (kinds.includes(k) || (k === "deploy" && kinds.includes("leak")) || (k === "leak" && kinds.includes("deploy"))) continue;
+    const rel = ["deploy", "leak", "quiet"];
+    if (kinds.includes(k) || (rel.includes(k) && kinds.some(x => rel.includes(x)))) continue;   // one release per shift
     kinds.push(k);
   }
   const gap = (duration - 45) / n;
@@ -1050,6 +1082,13 @@ const PROBLEMS = [
     teach: { deeper: "Roll back first, find the cause second. Database changes need two steps (add the new, then remove the old) so the old version keeps working.", title: "Errors started with the release", diagram: [["Release v2.5", "just went out", "hot"], ["All app servers", "9% of requests fail", "hot"], ["Users", "see errors", "hot"]],
     explain: "Nothing else changed: traffic is normal, servers are not busy. Errors jumped the second the new version went out. The change is the most likely cause.",
     q: "What do you do first?", options: [["Roll back the release", true, "Yes. Restore service first, debug later. Next time, a canary would limit the damage to 10% of users."], ["Add more app servers", false, "More servers run the same broken code. Errors stay the same."], ["Restart the database", false, "The database is fine. Changing healthy parts during an incident makes things worse."]] } },
+  { key: "quiet", name: "Quiet bad release",
+    when: (m, apps, r) => r && r.kind === "quiet" && r.share >= 1 && !r.rollbackLeft && r.age > 2,
+    text: (m, apps, r) => `Every server is healthy and pages load, but only ${Math.round(m.ordOk * 100)}% of checkouts finish since the new version went out.`,
+    fix: "Press the red <b>Roll back release</b> button at the top. Next time, add <b>Canary deploys</b> with <b>Canary analysis</b>, which watches orders.",
+    teach: { deeper: "Compare the new version with the old one at the same time (a canary and a baseline), on numbers the business cares about. Absolute thresholds miss slow, quiet drops.", title: "Healthy servers, failing orders", diagram: [["Release v4.2", "all checks green"], ["App servers", "Ready, no errors"], ["Orders", "4 in 10 lost", "hot"]],
+    explain: "Failed pages did not move and every Pod is Ready, so no alarm fired. But checkouts fell the moment the new version went out. The change broke the business logic, not the servers.",
+    q: "What do you do first?", options: [["Roll back the release", true, "Yes. The change is the cause even though nothing looks broken. Restore orders first, debug later."], ["Add more app servers", false, "The servers are fine. More of them run the same broken code."], ["Wait for an error alarm", false, "It will not come: the pages succeed. Customers and lost money are the only signal unless you measure orders."]] } },
   { key: "leak", name: "Memory leak",
     when: (m, apps, r) => r && r.kind === "leak" && r.share >= 1 && !r.rollbackLeft && r.age > 8,
     text: (m, apps, r) => `App servers have lost ${Math.round((1 - m.health) * 100)}% of their speed since the release, and it keeps falling.`,
@@ -1172,7 +1211,7 @@ function newState() {
 }
 /* A note on the end-of-shift timeline. kind: incident, fix or part. */
 function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
-const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow" };
+const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow" };
 function addPiece(type, opts = {}) {
   const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
   if (type === "app") {
@@ -1194,10 +1233,10 @@ function fire(kind, text) {
     const v = ready("app");
     if (v.length) killPiece(v[Math.floor(Math.random() * v.length)].id);
     log("page", (text || "An app server crashed.") + (v.length ? "" : " (none were running)"));
-  } else if (kind === "deploy-bug" || kind === "deploy-leak") {
+  } else if (kind === "deploy-bug" || kind === "deploy-leak" || kind === "deploy-quiet") {
     if (S.release) return;
     const canary = has("canary");
-    S.release = { kind: kind === "deploy-bug" ? "bug" : "leak", share: canary ? 0.1 : 1, age: 0, canaryLeft: canary ? CANARY_TIME : 0, rollbackLeft: 0, at: S.t };
+    S.release = { kind: kind === "deploy-bug" ? "bug" : kind === "deploy-quiet" ? "quiet" : "leak", share: canary ? 0.1 : 1, age: 0, canaryLeft: canary ? CANARY_TIME : 0, rollbackLeft: 0, at: S.t, fullAt: canary ? null : S.t };
     log(canary ? "info" : "page", (text || "A new version is out.") + (canary ? " Canary: one server got it first, about 10% of users." : " It went to every server at once."));
     updateRollback(); renderBoard();
   } else if (kind === "db-fail") {
@@ -1252,7 +1291,24 @@ function tickIncidents(dt) {
       log("page", `OOMKilled: ${victims.length} app server${victims.length === 1 ? "" : "s"} ran out of memory and restarted.`); renderBoard();
     }
   }
-  if (r.canaryLeft > 0) { r.canaryLeft -= dt; if (r.canaryLeft <= 0) { S.release = null; releaseCleared(); log("good", "Canary checks failed, so it rolled back by itself. Only about 10% of users saw the bad version."); updateRollback(); renderBoard(); } }
+  if (r.kind === "quiet") {
+    r.age += dt;
+    const ok = S.m ? Math.round(S.m.ordOk * 100) : 60;
+    if (r.canaryLeft > 0 && has("analysis") && r.age >= ANALYSIS_TIME) {
+      S.release = null; releaseCleared(); mark("Canary analysis", "fix");
+      log("good", `Canary analysis compared the two versions: about ${Math.round((1 - QUIET_FAIL) * 100)}% of checkouts finish on the new one, 99% on the old one. It stopped the rollout and rolled back. Every server was healthy the whole time.`);
+      updateRollback(); renderBoard(); return;
+    }
+    if (r.share >= 1 && !r.rollbackLeft) {
+      if (r.fullAt == null) r.fullAt = S.t;
+      if (has("analysis") && !r.alerted && S.t - r.fullAt >= ANALYSIS_TIME) { r.alerted = true; log("page", `Analysis alert: checkouts dropped to ${ok}% right after the release. Servers are healthy, so the new code is the cause. Roll back.`); }
+      if (!r.support && S.t - r.fullAt >= 15) { r.support = true; log("page", "Support: customers say their card was charged but no order arrived."); }
+    }
+  }
+  if (r.canaryLeft > 0) { r.canaryLeft -= dt; if (r.canaryLeft <= 0) {
+    if (r.kind === "quiet") { r.canaryLeft = 0; r.share = 1; r.fullAt = S.t; log("info", "Canary checks passed: servers Ready, no extra failed pages. The new version now goes to every server."); updateRollback(); renderBoard(); }
+    else { S.release = null; releaseCleared(); log("good", "Canary checks failed, so it rolled back by itself. Only about 10% of users saw the bad version."); updateRollback(); renderBoard(); }
+  } }
   else if (r.rollbackLeft > 0) { r.rollbackLeft -= dt; if (r.rollbackLeft <= 0) { S.release = null; releaseCleared(); log("good", "Rollback finished. Every server runs the old version again."); updateRollback(); renderBoard(); } }
 }
 
@@ -1288,6 +1344,7 @@ function step(dt) {
   const fA = appLoad <= 0 ? 0 : capA <= 0 ? 1 : Math.max(0, 1 - capA / appLoad);
   const uA = capA > 0 ? appLoad / capA : (appLoad > 0 ? 9 : 0);
   const bugFail = rel && rel.kind === "bug" ? BUG_FAIL * rel.share : 0;
+  const quietLost = rel && rel.kind === "quiet" && pay > 0 ? QUIET_FAIL * rel.share : 0;   // pages succeed, but this share of orders is never saved
   // cache
   if (S.coldLeft > 0) S.coldLeft = Math.max(0, S.coldLeft - dt);
   if (S.certDown > 0 && S.certDown !== Infinity) { S.certDown -= dt; if (S.certDown <= 0) { S.certDown = 0; log("good", "New certificate installed. Browsers open the site again."); updateRenew(); } }
@@ -1336,7 +1393,9 @@ function step(dt) {
   const p95 = Math.min(9999, lat.core + lat.edge + lat.stat + lat.slow + lat.failing + lat.partner);
 
   const burnErr = Math.max(0, err * 100 - 1) * 0.6, burnLat = p95 > 800 ? 1.5 + (p95 - 800) / 400 : 0;
-  const burn = Math.min(10, burnErr + burnLat);
+  const burnBiz = quietLost * 100 * 0.06;   // lost orders hurt even when no page fails
+  const ordOk = pay > 0 ? Math.max(0, 1 - Math.min(1, err) - quietLost) : 1;
+  const burn = Math.min(10, burnErr + burnLat + burnBiz);
   const healthBefore = S.budget;
   S.budget = Math.max(0, S.budget - burn * dt);
   const drop = healthBefore - S.budget;
@@ -1362,7 +1421,7 @@ function step(dt) {
   S.m = { tr, legit, bots, botsPass, staticReq, dynLegit, cdnServed, staticToApp, heavy, pay, payStuck, payQueued, payFailed,
     lb, nApp, used, health, capA, appLoad, uA, fA, bugFail, cache, hit, readsAll, reads, writes, jobWrites, jobsIn, jobsDone,
     workers, queue, reps, repCap, readsOnRep, primLoad, uD, uR, dbUp, failApp, failDb, failBug, qFail, failedLegit, err,
-    appLat, dbLat, lat, p95, burnErr, burnLat, burn, drop, out, cdn, waf, breaker };
+    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, burn, drop, out, cdn, waf, breaker };
   coach(dt);
 
   if (!L.sandbox) {
@@ -1413,7 +1472,7 @@ function coach(dt) {
   if (rescueOn && !L.sandbox && S.running && !S.over && S.problems.length && typeof rescue === "function" && document.getElementById("ov").hidden) {
     // Also step in early when health is falling so fast it would hit zero within about 8 seconds.
     const key = S.problems[0][0], fast = S.fall > 0 && S.budget / S.fall < 8;
-    const handling = (key === "dbdown" && S.failoverTo) || ((key === "deploy" || key === "leak") && S.release && S.release.rollbackLeft > 0);
+    const handling = (key === "dbdown" && S.failoverTo) || ((key === "deploy" || key === "leak" || key === "quiet") && S.release && S.release.rollbackLeft > 0);
     const lvl = S.budget < 25 || fast ? 2 : S.budget < 60 ? 1 : 0;
     if (lvl && !handling && (S.rescued[key] || 0) < lvl) { S.rescued[key] = lvl; rescue(key, lvl); }
   }
@@ -1581,6 +1640,7 @@ const SKILLS = [
   { id: "rate", name: "Rate limiting bots", keys: ["bots"], level: "bots", how: "Block a bot flood at the edge before it reaches your servers." },
   { id: "queue", name: "Queues and workers", keys: ["heavy", "qnow", "qbig"], level: "checkout", how: "Move slow work to a queue, with enough workers to keep up." },
   { id: "canary", name: "Canary releases and rollback", keys: ["deploy"], level: "deploy", how: "Catch a bad release early and roll it back." },
+  { id: "analysis", name: "Judging a release by orders", keys: ["quiet"], level: "quiet", part: "analysis", how: "Stop a release that breaks checkout while every server looks healthy." },
   { id: "leak", name: "Spotting a memory leak", keys: ["leak"], level: "leak", how: "See that a release slowly chokes servers, and roll it back." },
   { id: "failover", name: "Database failover", keys: ["dbdown"], level: "failover", how: "Have a standby ready before the database dies." },
   { id: "zones", name: "Surviving a zone outage", keys: ["azdown"], level: "zone", how: "Keep enough servers to lose half of them at once." },
@@ -1845,6 +1905,7 @@ const READ_MORE = {
   app: ["Kubernetes Deployments", "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/"],
   auto: ["Kubernetes autoscaling (HPA)", "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/"],
   canary: ["Canary releases in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/canary/"],
+  analysis: ["Analysis and progressive delivery in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/analysis/"],
   breaker: ["Circuit breaker, by Martin Fowler", "https://martinfowler.com/bliki/CircuitBreaker.html"],
   cache: ["Caching, AWS overview", "https://aws.amazon.com/caching/"],
   queue: ["Amazon SQS", "https://aws.amazon.com/sqs/"],
@@ -1860,6 +1921,7 @@ const WRONG_FIX = {
   app: "When the database is the slow part, more app servers just send it more work.",
   auto: "It reacts after load rises, and each new server needs seconds to start. For a peak you know about, add servers before it.",
   canary: "Rarely wrong: on a busy site it is cheap insurance for every release.",
+  analysis: "Useless until something measures the business: first count orders (or payments, sign-ups) per version, then let the release watch that number.",
   breaker: "If the outside service is fast and reliable, a timeout that is too short fails good requests.",
   cache: "Data that must be exact this second (stock left at checkout) should skip the cache or expire quickly.",
   queue: "When the user needs the answer right away (did my payment go through?), a queue only delays it.",
@@ -1921,7 +1983,7 @@ function rescue(key, lvl) {
   const p = problem(key) || {}, c = p.teach || {}, now = (S.problems.find(x => x[0] === key) || [])[1] || "";
   const t = fixParts(p.fix).find(x => L.tray.includes(x));
   const part = t && PARTS[t], over = part && spendRate() + part.cost > L.cap, maxed = part && count(t) >= part.max;
-  const canRoll = (key === "deploy" || key === "leak") && S.release && !S.release.rollbackLeft && !S.release.canaryLeft;
+  const canRoll = (key === "deploy" || key === "leak" || key === "quiet") && S.release && !S.release.rollbackLeft && !S.release.canaryLeft;
   const canDo = canRoll || (part && !over && !maxed && !/^Nothing to do/i.test(p.fix || ""));   // "Next time, add X" is advice, not a fix for now
   // Fix the app servers and the bottleneck moves: requests that failed there will all reach the database.
   const dbNext = t === "app" && S.m && S.m.dbUp ? S.m.uD * Math.max(1, S.m.uA) : 0;
@@ -2098,7 +2160,7 @@ function updateLive() {
   setLoad("jobs", has("queue") ? Math.min(1, S.backlog / 3000) : null, `${Math.round(S.backlog)} waiting`);
   setLoad("edge", m.waf && m.bots > 1 ? (m.bots - m.botsPass) / m.bots : null, "bots blocked");
   document.querySelector('.zone[data-z="data"]').classList.toggle("alarm", !m.dbUp);
-  document.querySelector('.zone[data-z="app"]').classList.toggle("alarm", !!(S.release && S.release.share >= 1) || m.payStuck > 0);
+  document.querySelector('.zone[data-z="app"]').classList.toggle("alarm", !!(S.release && S.release.share >= 1 && S.release.kind !== "quiet") || m.payStuck > 0);
   for (const p of S.pieces) {
     const c = document.querySelector(`.chip[data-id="${p.id}"]`); if (!c) continue;
     const booting = p.bootLeft > 0; c.classList.toggle("boot", booting);
@@ -2109,6 +2171,9 @@ function updateLive() {
   const w = $("#p95W"); w.textContent = m.p95 > 800 ? "slow" : m.p95 > 400 ? "OK" : "fast"; w.style.color = m.p95 > 800 ? "var(--bad)" : m.p95 > 400 ? "var(--warn)" : "var(--ok)";
   updateGuide();
   $("#errV").textContent = (m.err * 100).toFixed(1) + "%"; $("#errV").style.color = m.err > 0.01 ? "var(--bad)" : "var(--ink)";
+  const ow = $("#ordW");   // shown only when the shift takes payments: pages can succeed while orders fail
+  ow.textContent = m.pay > 0 ? `checkouts OK ${Math.round(m.ordOk * 100)}%` : "";
+  ow.style.color = m.ordOk < 0.95 ? "var(--bad)" : "var(--ok)";
   $("#budgetV").textContent = Math.ceil(S.budget) + "%";
   checkExperiments();
   const bb = $("#budgetBar"); bb.style.width = S.budget + "%"; bb.style.background = S.budget < 25 ? "var(--bad)" : S.budget < 60 ? "var(--warn)" : "var(--ok)";
@@ -2347,6 +2412,10 @@ const WORDS = [
   ["Health check", "A quick test the load balancer runs on each server. A server that fails it stops getting traffic."],
   ["Batch job", "Bulk work run in one go (imports, reports, backups). Best done when the site is quiet."],
   ["Canary", "Sending a new version to a small share of users first, to catch problems before everyone sees them."],
+  ["Canary analysis", "Comparing the new version with the old one on real numbers (orders, errors, speed) before sending it to everyone."],
+  ["Readiness check", "A question the platform asks each server: are you up and able to take visitors? It says nothing about whether the code does the right thing."],
+  ["Business metric", "A number the business cares about, like orders, payments or sign-ups a minute. The best early warning of a bad release that breaks nothing technical."],
+  ["Expand and contract", "Changing a database in steps: add the new column, move the code to it, remove the old one later. Every version still running can read the data."],
   ["Error budget", "How much failure you agreed to tolerate. In this game it is Site health."],
 ];
 /* What each part looks like in real work: a short, typical config. Shown in the Parts guide and on part cards. */
@@ -2374,6 +2443,19 @@ spec:
   metrics:
     - type: Resource
       resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }`],
+  analysis: ["Argo Rollouts AnalysisTemplate", `kind: AnalysisTemplate
+spec:
+  metrics:
+    - name: checkout-success
+      interval: 1m
+      failureLimit: 1
+      successCondition: result[0] >= 0.97
+      provider:
+        prometheus:
+          query: |
+            sum(rate(orders_saved_total{version="{{args.version}}"}[2m]))
+            /
+            sum(rate(checkout_started_total{version="{{args.version}}"}[2m]))`],
   canary: ["Argo Rollouts", `strategy:
   canary:
     steps:
@@ -2426,6 +2508,7 @@ const LABS = {
   lb: ["Free, on your laptop (Docker)", ["Start two copies of a tiny web app: docker run -d -p 8081:80 --name a nginxdemos/hello and the same with 8082 and name b.", "Write an nginx.conf with an upstream block listing localhost:8081 and localhost:8082 (see the config above).", "Run nginx with that config on port 8080 and open http://localhost:8080 several times.", "Watch the server name change between a and b: requests are being shared.", "Stop container a (docker stop a) and refresh: nginx keeps sending you to b."]],
   app: ["Free, on your laptop (kind)", ["Install kind and kubectl, then run kind create cluster.", "kubectl create deployment web --image=nginxdemos/hello --replicas=3", "kubectl get pods -o wide: three copies of the same app.", "kubectl delete pod <one of them> and watch Kubernetes start a new one at once.", "kubectl delete deployment web when you are done."]],
   auto: ["Free, on your laptop (kind)", ["Install metrics-server in your kind cluster (its README has a kind flag: --kubelet-insecure-tls).", "Create a Deployment with a CPU request, then kubectl autoscale deployment web --cpu-percent=60 --min=1 --max=5.", "Generate load with a busybox pod running a wget loop against the service.", "Watch kubectl get hpa -w: replicas rise as CPU climbs, then fall a few minutes after you stop."]],
+  analysis: ["Free, on your laptop (kind + Prometheus)", ["Install Argo Rollouts and the kube-prometheus-stack chart in a kind cluster.", "Make a tiny app that counts checkout_started_total and orders_saved_total, labelled with its version.", "Release it as a Rollout with a canary step at 10% and the AnalysisTemplate above.", "Release a version that returns 200 but skips saving the order. Watch the analysis fail and the rollout abort, while every Pod stays Ready.", "Clean up: kind delete cluster."]],
   canary: ["Free, on your laptop (kind)", ["Run version 1 as a Deployment behind a Service.", "Change the image tag and run kubectl rollout status deployment/web to watch the rollout.", "Break it on purpose (use an image tag that does not exist) and see pods fail.", "Fix it in one command: kubectl rollout undo deployment/web. That is a rollback.", "Next step: install Argo Rollouts and use the canary steps shown above."]],
   breaker: ["Free, any language", ["Call a slow test URL: https://httpbin.org/delay/8 (it answers after 8 seconds).", "Add a 1-second timeout to the call (requests.get(url, timeout=1) in Python) and see it fail fast.", "Wrap it in a counter: after 5 failures in a row, skip the call for 30 seconds and return an error at once.", "That counter is a circuit breaker. Libraries such as resilience4j (Java) or pybreaker (Python) do it for you."]],
   cache: ["Free, on your laptop (Docker)", ["docker run -d -p 6379:6379 --name redis redis", "Write a function that sleeps 2 seconds to pretend it is a slow database read.", "Wrap it: check Redis first, and on a miss call the slow function and save the result with ex=60 (see the config above).", "Call it twice: the first takes 2 seconds, the second is instant.", "Wait 60 seconds: the key expires and the next call is slow again (that is TTL)."]],
@@ -2449,7 +2532,7 @@ const EXTRA_GUIDE = [
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
-const GUIDE_ORDER = ["cdn", "waf", "lb", "acm", "app", "auto", "canary", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
+const GUIDE_ORDER = ["cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "cache", "queue", "worker", "db", "replica", "standby"];
 const PART_GUIDE = {
   cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
     example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
@@ -2469,6 +2552,9 @@ const PART_GUIDE = {
   auto: { everyday: "A manager who calls in extra cashiers when the line gets long and sends them home when it is quiet.",
     example: "A rule says: keep app servers around 60% busy. At 9 am traffic doubles, it adds two servers (each takes a few seconds to start); at midnight it removes them to save money.",
     use: "Traffic that rises and falls during the day. For a known spike, scale up before it, because new servers need time to boot." },
+  analysis: { everyday: "Tasting the new recipe's sales, not just checking the oven is hot: if fewer people finish their plate on the new menu, you switch back.",
+    example: "Version 4.2 goes to 10% of users. Every Pod is Ready and no page fails, but only 60% of its checkouts save an order against 99% on the old version. The analysis fails and the rollout stops at 10%.",
+    use: "With every canary on anything that takes money or sign-ups. Without it, a canary only catches crashes and errors, not wrong behaviour." },
   canary: { everyday: "Trying a new recipe on one table before changing the menu for the whole restaurant.",
     example: "Version 2.5 goes to 1 of 10 servers. If its error rate or memory jumps in the first minutes, it is rolled back automatically and 90% of users never see the bug.",
     use: "Every release, especially busy days. It turns a bad release into a small, short problem." },
@@ -2555,6 +2641,8 @@ const QUIZ = [
     why: "A timeout and circuit breaker stop waiting and fail fast, so your servers stay free for everyone else." },
   { q: "Half of all requests are images and CSS files that are the same for every visitor.", a: "cdn", opts: ["cache", "cdn", "replica"],
     why: "A CDN serves files that never change from near the user, so they never reach your app." },
+  { q: "A release passed every test and every server is healthy, but orders fell 40% right after it went out. No page failed.", a: "analysis", opts: ["analysis", "app", "breaker"],
+    why: "Healthy servers and zero errors say nothing about orders. Canary analysis compares orders on the new version with the old one and stops the rollout." },
   { q: "Each release has a 1-in-10 chance of breaking checkout, and you release every day.", a: "canary", opts: ["canary", "standby", "waf"],
     why: "A canary sends the new version to about 10% of users first and rolls back if errors jump." },
   { q: "The cache was restarted and came back empty. For the next 25 seconds the database is 140% busy and pages fail.", a: "replica", opts: ["replica", "waf", "canary"],
@@ -2864,7 +2952,7 @@ function setup(level) {
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
 const SHIFT_BUILD = { launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
-const FIX_PART = { cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+const FIX_PART = { quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
   for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
@@ -3079,7 +3167,7 @@ function showMenu() {
       <button class="htab" data-tab="settings" role="tab">Settings</button>
     </div>
     <div class="hpane" data-pane="shifts">
-    ${[[0, 5, "Traffic basics", "one problem each"], [5, 12, "Releases and failures", "things that break"], [12, LEVELS.length, "Big days", "several problems at once"]].map(([from, to, title, sub]) => `
+    ${[[0, 5, "Traffic basics", "one problem each"], [5, 13, "Releases and failures", "things that break"], [13, LEVELS.length, "Big days", "several problems at once"]].map(([from, to, title, sub]) => `
       <div class="msec"><h3>${title} <small>${sub}</small></h3>
       <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k, u = unlocked(i), st = stars[lv.id] || 0; return `
         <button class="lv${i === nextI ? " next" : ""}" data-i="${i}" ${u ? "" : "disabled"}>
