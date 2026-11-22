@@ -164,6 +164,10 @@ header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 8; backg
 .card { display: grid; grid-template-columns: 34px 1fr; gap: 2px 10px; align-items: center; padding: 8px 10px; border-radius: 8px;
   background: var(--panel); border: 1px solid var(--line); cursor: grab; touch-action: none; user-select: none; text-align: left; }
 .card:hover { border-color: var(--line-2); background: var(--panel-2); }
+.card { position: relative; }
+.card .key { position: absolute; top: 4px; right: 6px; font: 600 10px var(--mono); color: var(--ink-faint); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 4px; line-height: 14px; }
+.tray-note a { color: var(--accent); }
+.keys-table td { padding: 4px 12px 4px 0; } .keys-table kbd { font: 600 12px var(--mono); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 6px; }
 .card.armed { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 /* The part the coach suggests, and the column it goes in: a calm, slow glow (no flashing). */
 .card.suggest { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -468,7 +472,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
     <div class="spendbox"><div class="top"><span>Spend limit</span><b id="sbV">$0 / $0 an hour</b></div><div class="bar"><i id="sbBar"></i></div><small id="sbNote">Each part costs money every hour. You cannot go over the limit.</small></div>
     <div class="label" style="margin-bottom:8px">Parts: drag one onto the board</div>
     <div class="tray" id="tray"></div>
-    <p class="tray-note">You can also click a part, then click a column. The × on a part removes it.</p>
+    <p class="tray-note">You can also click a part, then click a column. The × on a part removes it.<br><b>Keys:</b> 1-9 add a part · Space start/pause · F speed · R roll back or renew · <a href="#" id="keysLink">? all keys</a></p>
     <div class="sandbox" id="sandbox" hidden>
       <div class="label">Experiments <small id="expCount"></small></div>
       <ol class="exps" id="exps"></ol>
@@ -1238,6 +1242,7 @@ let stars = store.get("loadrush-stars", {});
 let teachOn = store.get("loadrush-teach", false);
 let rescueOn = store.get("loadrush-rescue", true);   // pause and help when health falls (on unless turned off)
 let role = store.get("loadrush-role", "mid");
+let unlockAll = store.get("loadrush-unlockall", false);   // Settings: play any shift without finishing the one before
 const ROLES = { mid: { name: "Mid-level", wait: 5, desc: "Hints appear in the pager after 5 seconds. Plain explanations." },
   staff: { name: "Staff", wait: 10, desc: "Hints wait 10 seconds. After each shift: trade-off questions to discuss." },
   principal: { name: "Principal", wait: Infinity, desc: "No hints. After each shift: trade-off and organisation questions." } };
@@ -2152,14 +2157,14 @@ function layoutZones() {
 }
 function renderTray() {
   const tray = $("#tray"); tray.innerHTML = "";
-  for (const type of L.tray) {
+  L.tray.forEach((type, ti) => {
     const p = PARTS[type];
     const b = document.createElement("button");
     b.className = "card" + (L.fresh.includes(type) ? " new" : "") + (armed === type ? " armed" : "");
-    b.dataset.type = type; b.title = `${p.what}\nIn real life: ${p.real}.`;
-    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="what">${p.short}</span><span class="meta">$${p.cost}/h · ready in ${p.boot}s</span>`;
+    b.dataset.type = type; b.title = `${p.what}\nIn real life: ${p.real}.${ti < 9 ? `\nShortcut: press ${ti + 1} to add one.` : ""}`;
+    b.innerHTML = `<span class="tag">${p.tag}</span><span class="nm">${p.name}</span><span class="what">${p.short}</span><span class="meta">$${p.cost}/h · ready in ${p.boot}s</span>${ti < 9 ? `<span class="key" aria-hidden="true">${ti + 1}</span>` : ""}`;
     tray.appendChild(b);
-  }
+  });
   $("#sandbox").hidden = !L.sandbox;
   if (L.sandbox) renderExperiments();
   if (typeof showSuggestion === "function" && S) { showSuggestion(); updateHeader(); }
@@ -3209,7 +3214,7 @@ function showBrief() {
   $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } else boardGuide(); };
   $("#bMenu2").onclick = showMenu;
 }
-function unlockedId(id) { const i = LEVELS.findIndex(l => l.id === id); return i === 0 || (i > 0 && ((stars[LEVELS[i - 1].id] || 0) > 0 || (stars[id] || 0) > 0)); }
+function unlockedId(id) { const i = LEVELS.findIndex(l => l.id === id); return i === 0 || (i > 0 && unlockAll) || (i > 0 && ((stars[LEVELS[i - 1].id] || 0) > 0 || (stars[id] || 0) > 0)); }
 function skillsHtml() {
   const known = store.get("loadrush-skills", {}), n = SKILLS.filter(s => known[s.id]).length;
   const lvName = id => (LEVELS.find(l => l.id === id) || {}).name;
@@ -3229,7 +3234,7 @@ function oncallCard() {
 }
 function showMenu() {
   if (S) setRunning(false);
-  const unlocked = i => i === 0 || (stars[LEVELS[i - 1].id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
+  const unlocked = i => i === 0 || unlockAll || (stars[LEVELS[i - 1].id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
   const g = gameFromSnapshot(store.get("loadrush-game", null));
   const showResume = g && !(S && S.t > 0.5 && !S.over && S.running === false && L === g.L);
   const nextI = (() => { for (let i = 0; i < LEVELS.length; i++) if (unlocked(i) && !stars[LEVELS[i].id]) return i; return -1; })();
@@ -3261,7 +3266,7 @@ function showMenu() {
     ${[[0, 5, "Traffic basics", "one problem each"], [5, 13, "Releases and failures", "things that break"], [13, LEVELS.length, "Big days", "several problems at once"]].map(([from, to, title, sub]) => `
       <div class="msec"><h3>${title} <small>${sub}</small></h3>
       <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k, u = unlocked(i), st = stars[lv.id] || 0; return `
-        <button class="lv${i === nextI ? " next" : ""}" data-i="${i}" ${u ? "" : "disabled"}>
+        <button class="lv${i === nextI ? " next" : ""}" data-i="${i}" ${u ? "" : `disabled title="Win ${LEVELS[i - 1].name} first, or turn on Unlock every shift in Settings."`}>
           <span class="n">Shift ${i + 1}${u ? "" : " · locked"}${i === nextI ? ` <em>next</em>` : ""}</span><span class="t">${lv.name}</span>
           <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(st)}${"☆".repeat(3 - st)}${store.get("loadrush-cost", {})[lv.id] ? ` · $ ${store.get("loadrush-cost", {})[lv.id]}` : ""}</span>${bestOf(lv.id)}
         </button>`; }).join("")}
@@ -3292,7 +3297,8 @@ function showMenu() {
       <h3>Help while playing</h3>
       <label class="switch" for="teachSw"><input type="checkbox" id="teachSw" ${teachOn ? "checked" : ""}> Teach mode <small>half speed; pauses to explain each problem</small></label><br>
       <label class="switch" for="rescueSw" style="margin-top:8px"><input type="checkbox" id="rescueSw" ${rescueOn ? "checked" : ""}> Help me when health drops <small>pauses at 60% and 25% health to explain what is wrong and how to fix it</small></label><br>
-      <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label>
+      <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label><br>
+      <label class="switch" for="unlockSw" style="margin-top:8px"><input type="checkbox" id="unlockSw" ${unlockAll ? "checked" : ""}> Unlock every shift <small>play any shift in any order, for example if you already know the basics or are teaching one topic</small></label>
       <h3>Save or move your progress</h3>
       <p class="real">Stars are saved in this browser only. Copy a code to keep a backup or move it to another browser.</p>
       <div class="acts" style="margin-top:8px"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
@@ -3303,6 +3309,7 @@ function showMenu() {
   $("#teachSw").onchange = e => setTeach(e.target.checked);
   $("#rescueSw").onchange = e => { rescueOn = e.target.checked; store.set("loadrush-rescue", rescueOn); };
   $("#presentSw").onchange = e => setPresent(e.target.checked);
+  $("#unlockSw").onchange = e => { unlockAll = e.target.checked; store.set("loadrush-unlockall", unlockAll); try { localStorage.setItem("loadrush-tab", "settings"); } catch {} showMenu(); toast(unlockAll ? "Every shift is unlocked." : "Shifts unlock one by one again."); };
   if ($("#bGuide")) $("#bGuide").onclick = () => boardGuide(true);
   const setTab = t => { for (const x of document.querySelectorAll("[data-tab]")) x.classList.toggle("on", x.dataset.tab === t); for (const x of document.querySelectorAll("[data-pane]")) x.classList.toggle("on", x.dataset.pane === t); try { localStorage.setItem("loadrush-tab", t); } catch {} };
   setTab(document.querySelector(`[data-tab="${tab}"]`) ? tab : "shifts");
@@ -3401,7 +3408,37 @@ $("#rollback").onclick = rollback;
 $("#renew").onclick = renewCert;
 $("#menu").onclick = showMenu;
 $("#words").onclick = showWords;
-document.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body && S && !S.over) { e.preventDefault(); setRunning(!S.running); } });
+/* Keyboard shortcuts. Ignored while typing, while a sheet or the tutorial is open, and with Cmd/Ctrl/Alt. */
+function showKeys() {
+  const wasRunning = S && S.running && !S.over; if (wasRunning) setRunning(false);
+  const rows = [["1 to 9", "Add the part with that number from the tray, straight into its column"], ["Space", "Start, pause or resume the shift"],
+    ["F", "Change speed: 1×, 2×, ½×"], ["R", "Press the red button at the top: Roll back a bad release, or Renew the certificate"],
+    ["M", "Open the menu"], ["?", "Show these keys"], ["Esc", "Close a window"]];
+  openSheet(`<h2>Keyboard shortcuts</h2><table class="keys-table">${rows.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join("")}</table>
+    <p class="real">The number keys follow the order of the parts in the tray on the left. Each card shows its number in the corner.</p>
+    <div class="acts"><button class="btn go" id="bKeysOk">Got it</button></div>`, () => { closeSheet(); if (wasRunning) setRunning(true); });
+  $("#bKeysOk").onclick = () => sheetClose && sheetClose();
+}
+$("#keysLink").onclick = e => { e.preventDefault(); showKeys(); };
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  const t = e.target, typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  if (typing || !$("#ov").hidden || tourStep >= 0) return;
+  if (e.key === "?") { e.preventDefault(); showKeys(); return; }
+  if (e.key === "m" || e.key === "M") { e.preventDefault(); showMenu(); return; }
+  if (!S || S.over) return;
+  if (e.code === "Space" && (t === document.body || !t.closest("button, a"))) { e.preventDefault(); setRunning(!S.running); return; }
+  if (e.key === "f" || e.key === "F") { e.preventDefault(); $("#speed").click(); return; }
+  if (e.key === "r" || e.key === "R") {
+    const b = [$("#rollback"), $("#renew")].find(x => x && !x.hidden && !x.disabled);
+    if (b) { e.preventDefault(); b.click(); } return;
+  }
+  if (/^[1-9]$/.test(e.key)) {
+    const type = L.tray[+e.key - 1]; if (!type) return;
+    e.preventDefault(); armed = null;
+    if (place(type, PARTS[type].zone) !== false) renderTray();
+  }
+});
 addEventListener("resize", () => { measure(); if (tourStep >= 0) showTourStep(); });
 
 /* Resume a saved shift: after a page reload, a browser restart or an update to the page. */
