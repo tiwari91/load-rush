@@ -67,6 +67,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.
 
 - **Keyboard:** 1 to 9 add the matching part from the tray straight into its column (each card shows its number), Space starts or pauses, F changes speed, R rolls back a bad release or renews the certificate, M opens the menu and ? lists every key.
+- **Progress link:** progress saves itself in the browser, and the page address keeps a copy (after `#p=`) that updates by itself. Bookmark the page, or open that link on another device, and your stars come back; the best of both is kept.
 - **Unlock every shift** (Settings): play any shift in any order, for experienced players or for teaching one topic.
 
 - **Tutorial:** the first time you open Launch Day, a short guided walk-through points at exactly where to drag. Replay it from the menu.

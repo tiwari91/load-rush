@@ -3536,7 +3536,7 @@ function showMenu() {
       <label class="switch" for="presentSw" style="margin-top:8px"><input type="checkbox" id="presentSw" ${presentOn ? "checked" : ""}> Big text <small>for a projector or screen share</small></label><br>
       <label class="switch" for="unlockSw" style="margin-top:8px"><input type="checkbox" id="unlockSw" ${unlockAll ? "checked" : ""}> Unlock every shift <small>play any shift in any order, for example if you already know the basics or are teaching one topic</small></label>
       <h3>Save or move your progress</h3>
-      <p class="real">Stars are saved in this browser only. Copy a code to keep a backup or move it to another browser.</p>
+      <p class="real">Your progress saves itself in this browser after every shift. The page address also carries it (the part after <b>#p=</b>), and it updates by itself: <b>bookmark this page</b>, or open that link on another browser or device, and your stars come back. You can also copy a code below.</p>
       <div class="acts" style="margin-top:8px"><button class="btn" id="bCopyProg">Copy my progress</button><button class="btn" id="bLoadProg">Load progress</button></div>
       <input type="text" id="progCode" class="progcode" hidden aria-label="Progress code" spellcheck="false" autocomplete="off">
       <div class="real" id="progMsg"></div>
@@ -3693,9 +3693,10 @@ function resumeGame(snap) {
 function saveGame() { store.set("loadrush-game", gameSnapshot(S, L)); }
 addEventListener("pagehide", saveGame);
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
+const progressNow = () => ({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false),
+  skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}) });
 function copyProgress() {
-  const code = encodeProgress({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false),
-    skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}) });
+  const code = encodeProgress(progressNow());
   const box = $("#progCode"); box.value = code; box.hidden = false; box.select();
   const done = () => { $("#progMsg").textContent = "Copied. Paste it into Load progress on any browser or computer."; };
   try { navigator.clipboard.writeText(code).then(done, () => { $("#progMsg").textContent = "Select the code above and copy it."; }); }
@@ -3709,6 +3710,34 @@ function loadProgress() {
   setTeach(p.teach); setPresent(p.present); store.set("loadrush-tour-done", p.tour);
   store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall); store.set("loadrush-exp", p.exp);
   showMenu(); toast(`Progress loaded: ${Object.keys(stars).length} shift${Object.keys(stars).length === 1 ? "" : "s"} with stars.`);
+}
+
+/* Progress link: the page address always carries your progress (#p=LR1-...), so a bookmark or the link opened on
+   another device brings your stars back. Updated automatically whenever progress or settings change. */
+const LINK_KEYS = new Set(["loadrush-stars", "loadrush-role", "loadrush-teach", "loadrush-present", "loadrush-tour-done", "loadrush-skills", "loadrush-scores", "loadrush-oncall", "loadrush-exp"]);
+let linkTimer = null;
+function syncLink() {
+  linkTimer = null;
+  if (!Object.keys(stars).length && !Object.keys(store.get("loadrush-skills", {})).length) return;   // nothing worth carrying yet
+  try { history.replaceState(history.state, "", location.pathname + location.search + "#p=" + encodeProgress(progressNow())); } catch {}
+}
+{ const set = store.set; store.set = (k, v) => { set.call(store, k, v); if (LINK_KEYS.has(k) && !linkTimer) linkTimer = setTimeout(syncLink, 300); }; }
+/* Opening a progress link: keep the best of both (the link and this browser), never lose stars. */
+function progressFromLink() {
+  const m = location.hash.match(/^#p=(LR1-[A-Za-z0-9+/]+)$/); if (!m) return;
+  const p = decodeProgress(m[1]); if (!p) return;
+  const fresh = !Object.keys(stars).length;
+  let gained = 0;
+  for (const [k, v] of Object.entries(p.stars)) if (v > (stars[k] || 0)) { stars[k] = v; gained++; }
+  store.set("loadrush-stars", stars);
+  const best = (a, b) => { for (const [k, v] of Object.entries(b)) if (!(a[k] >= v)) a[k] = v; return a; };
+  store.set("loadrush-scores", best(store.get("loadrush-scores", {}), p.scores));
+  store.set("loadrush-oncall", best(store.get("loadrush-oncall", {}), p.oncall));
+  store.set("loadrush-skills", Object.assign({}, p.skills, store.get("loadrush-skills", {})));
+  store.set("loadrush-exp", Object.assign({}, p.exp, store.get("loadrush-exp", {})));
+  if (p.tour) store.set("loadrush-tour-done", true);
+  if (fresh) { role = p.role; store.set("loadrush-role", role); setTeach(p.teach); setPresent(p.present); }
+  if (gained) setTimeout(() => toast(`Progress restored from your link: ${gained} shift${gained === 1 ? "" : "s"} with stars.`), 400);
 }
 
 let last = performance.now(), acc = 0, histAcc = 0, saveAcc = 0;
@@ -3731,10 +3760,12 @@ window.claude?.hot?.snapshot?.(() => ({ game: gameSnapshot(S, L) }));
 const challenge = (() => { try { const q = new URLSearchParams(location.search); const lv = LEVELS.find(l => l.id === q.get("challenge")); const sc = parseInt(q.get("score"), 10); return lv && sc > 0 ? { lv, sc } : null; } catch (e) { return null; } })();
 const challengeLink = (lv, sc) => `${location.origin}${location.pathname}?challenge=${lv.id}&score=${sc}`;
 function boot(data) {
+  progressFromLink();
   setup(LEVELS[0]);
   if (data && data.game && resumeGame(data.game)) { requestAnimationFrame(frame); return; }
   showMenu();
   requestAnimationFrame(frame);
+  syncLink();
 }
 window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
 </script>
