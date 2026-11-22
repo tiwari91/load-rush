@@ -589,6 +589,10 @@ const PARTS = {
              what: "Blocks clients that send far too many requests, such as bots. Real users are not affected." },
   acm: { short: "Renews the HTTPS certificate by itself", name: "Auto-renew certs", tag: "TLS", zone: "entry", cost: 0, boot: 1, max: 1, real: "AWS Certificate Manager, Let's Encrypt with certbot",
              what: "Renews the site's HTTPS certificate automatically before it expires, so nobody has to remember the date." },
+  spot: { short: "Same server, about 70% cheaper, but AWS can take it back", name: "Spot server", tag: "SP", zone: "app", cost: 1, boot: 4, max: 9, real: "an EC2 Spot Instance",
+             what: "A normal app server (150 requests a second) bought from AWS's spare capacity at a big discount. AWS can take it back with a 2-minute warning (10 seconds here) when it needs the capacity." },
+  rebalance: { short: "Replaces Spot servers before they are taken", name: "Capacity rebalancing", tag: "CR", zone: "app", cost: 0, boot: 1, max: 1, real: "EC2 Auto Scaling Capacity Rebalancing with a mixed instances policy: several instance types, the price-capacity-optimized allocation strategy and an On-Demand base",
+             what: "Spreads Spot servers over several instance types, so one reclaim only hits some of them, and starts replacements as soon as AWS warns, before the old ones are taken." },
   jitter: { short: "Retries wait longer each time, at random", name: "Backoff + jitter", tag: "BJ", zone: "app", cost: 0, boot: 2, max: 1, real: "AWS SDK standard retry mode (exponential backoff with full jitter and a retry quota), Envoy retry budgets, a remote-config switch for apps already on phones",
              what: "Changes how apps retry a failed request: wait a little, then longer, at a random moment, and stop retrying when most requests are failing. A short outage then stays short instead of being multiplied by retries." },
   region2: { short: "A ready copy of the site in another region", name: "Second region", tag: "DR", zone: "entry", cost: 6, boot: 12, max: 1, real: "a warm standby in a second AWS Region: Route 53 failover records with health checks, an Aurora Global Database or cross-Region read replica, the same app deployed by infrastructure as code",
@@ -598,7 +602,7 @@ const PARTS = {
 };
 const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
 const APP_CAP = 150, DB_CAP = 400, REP_CAP = 300, WORKER_RATE = 15;
-const RETRY_X = 4, RETRY_SAFE = 0.4, RETRY_BUDGET = 0.1, BLIP_TIME = 3, BLIP_CAP = 0.3, REGION_TIME = 45, DR_SWITCH = 2, NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
+const SPOT_WARN = 10, SPOT_DRY = 25, RETRY_X = 4, RETRY_SAFE = 0.4, RETRY_BUDGET = 0.1, BLIP_TIME = 3, BLIP_CAP = 0.3, REGION_TIME = 45, DR_SWITCH = 2, NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
 
 /* ================================================================== shifts */
 const ramp = (t, t0, t1, a, b) => t <= t0 ? a : t >= t1 ? b : a + (b - a) * (t - t0) / (t1 - t0);
@@ -854,6 +858,24 @@ const LEVELS = [
     learned: ["Real systems combine all of these. Each part removes one kind of load.",
               "Good teams fix the cause (bots, slow requests, repeated reads) before buying more servers.",
               "Hands-on: build the whole thing on AWS: CloudFront, a load balancer, containers, ElastiCache, SQS and RDS."] },
+  { id: "spot", after: "zone", watch: "Four of your six servers are Spot servers: cheap, but AWS can take them back with a short warning. Watch the pager for the warning.", staff: ["Which of your workloads can lose a server with 2 minutes' notice, and which cannot? Where would you never use Spot?", "Why does using several instance types make Spot safer, and what does the price-capacity-optimized strategy do?"], principal: ["Spot can cut the server bill by more than half. How much interruption risk is the business willing to buy for that saving, and who decides?", "What is the On-Demand base you never go below, and how did you choose that number?"],
+    name: "Spot Reclaim", duration: 105, cap: 34,
+    blurb: "Cheap Spot servers vanish with a 2-minute warning.",
+    story: "To save money, most of your app servers run on EC2 Spot: spare AWS capacity at about a third of the price. The catch is that AWS can take Spot servers back when it needs them, with a 2-minute warning. If all your Spot servers are the same type, they all go at once. Like booking cheap stand-by seats for most of your team: fine until the airline needs the seats, and then everyone is off the plane together.",
+    brief: "Traffic climbs to about 600 visitors a second. You run 2 normal (On-Demand) app servers and 4 Spot servers, all of one instance type, which keeps you well under budget. Spot servers cost $1 an hour instead of $4. Tonight AWS will need some of that capacity back.",
+    task: "Keep the site up when AWS takes Spot servers back, without blowing the budget.",
+    given: ["lb", "app", "app", "spot", "spot", "spot", "spot", "cache", "db"], tray: ["app", "spot", "auto", "rebalance"], fresh: ["spot", "rebalance"], spot: true,
+    traffic: t => T({ legit: ramp(t, 0, 30, 300, 600), staticFrac: 0.05 }),
+    events: [{ t: 6, kind: "info", text: "Cost report: Spot saves us $12 an hour. All 4 Spot servers are the same instance type, and AWS capacity is tight tonight.", prep: ["rebalance"], keys: ["spotgone"] },
+             { t: 30, kind: "spot-warn", text: "EC2: Spot interruption notice." },
+             { t: 30 + SPOT_WARN, kind: "spot-reclaim", text: "EC2 is taking back the Spot servers that were warned." },
+             { t: 70, kind: "spot-warn", text: "EC2: another Spot interruption notice." },
+             { t: 70 + SPOT_WARN, kind: "spot-reclaim", text: "EC2 is taking back the warned Spot servers again." }],
+    learned: ["Spot servers are the same machines at a big discount, but AWS can take them back with a 2-minute warning.",
+              "Spread Spot over several instance types and zones, so one reclaim only hits part of your fleet; use the price-capacity-optimized strategy.",
+              "Turn on Capacity Rebalancing so replacements start at the warning, and keep an On-Demand base big enough to stay up on its own.",
+              "Use Spot for work that can stop and restart: stateless web servers behind a load balancer, batch jobs, CI runners. Avoid it for a single database or anything that cannot be interrupted.",
+              "Hands-on (free, read-only): aws ec2 describe-spot-price-history --instance-types m5.large m6i.large --product-descriptions Linux/UNIX --max-items 10, and compare with the On-Demand price."] },
   { id: "retry", after: "partner", watch: "At 0:30 the database stalls for 3 seconds. Watch what happens after it recovers: are failed pages falling back to zero?", staff: ["Your app retries, the SDK retries, and the load balancer retries. With 3 tries at each of 3 layers, how many requests can one click become?", "Which requests are safe to retry? What makes a payment safe to send twice?"], principal: ["The phone app with the bad retry loop is already on a million phones. What could you have built in advance to change its behaviour without a new release?", "A short blip caused a long outage. How do you test for problems that only appear when the system is pushed past a tipping point?"],
     name: "Retry Storm", duration: 100, cap: 32,
     blurb: "A 3-second blip turns into a long outage.",
@@ -1123,6 +1145,13 @@ let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, hea
 /* Every problem the game can detect, in priority order. Each one has, in one place:
    when (is it happening), text (what the pager says), fix (the Mid-level hint), teach (the Teach mode card). */
 const PROBLEMS = [
+  { key: "spotgone", name: "Spot servers taken back",
+    when: (m, apps, r) => L.spot && S.spotLostAt != null && S.t - S.spotLostAt < 30 && m.uA > 0.95,
+    text: (m, apps, r) => `AWS took back your Spot servers. The ${apps} server${apps === 1 ? "" : "s"} left cannot carry ${Math.round(m.legit)} visitors a second${S.spotDry > 0 && !has("rebalance") ? ", and that Spot instance type has no capacity right now" : ""}.`,
+    fix: "Add <b>App servers</b> (On-Demand) now, or the <b>Autoscaler</b>. Then add <b>Capacity rebalancing</b>, so the next reclaim only hits some Spot servers and replacements start at the warning.",
+    teach: { deeper: "Keep an On-Demand base that can carry the site alone for a few minutes, spread Spot over several instance types, and use the price-capacity-optimized allocation strategy.", title: "Cheap servers, all gone at once", diagram: [["On-Demand servers", "2 left"], ["Spot servers", "taken back", "hot"], ["Same instance type", "one Spot pool", "hot"]],
+    explain: "All your Spot servers were one instance type, so they came from one Spot pool. When AWS needed that pool back, every one of them went in the same minute.",
+    q: "What makes the next reclaim harmless?", options: [["Several instance types plus Capacity rebalancing", true, "Yes. A reclaim then hits only one pool, and replacements start at the warning."], ["Buy more Spot servers of the same type", false, "They come from the same pool and go together next time."], ["A read replica", false, "The database is fine. You lost app servers."]] } },
   { key: "retrystorm", name: "Retry storm",
     when: (m, apps, r) => L.retry && m.retryReq > m.legit * 0.15,
     text: (m, apps, r) => `Real visitors send about ${Math.round(m.legit)} requests a second, but ${Math.round(m.retryReq)} more a second are retries of failed requests. The retries cause more failures, which cause more retries${S.blipLeft > 0 ? "" : ", even though the database has recovered"}.`,
@@ -1306,9 +1335,11 @@ function newState() {
 }
 /* A note on the end-of-shift timeline. kind: incident, fix or part. */
 function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
-const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow", "region-fail": "Region down", "db-blip": "Database stall" };
+const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow", "region-fail": "Region down", "db-blip": "Database stall", "spot-warn": "Spot warning", "spot-reclaim": "Spot reclaimed" };
 function addPiece(type, opts = {}) {
-  const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
+  const spot = type === "spot"; if (spot) type = "app";   // a Spot server is an app server with a flag: cheaper, and AWS can take it back
+  const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[spot ? "spot" : type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
+  if (spot) p.spot = true;
   if (type === "app") {
     const a = S.pieces.filter(x => x.type === "app" && x.az === "A").length, b = S.pieces.filter(x => x.type === "app" && x.az === "B").length;
     p.az = S.azDown > 0 ? "B" : a <= b ? "A" : "B";
@@ -1317,8 +1348,9 @@ function addPiece(type, opts = {}) {
 }
 const ready = type => S.pieces.filter(p => p.type === type && p.bootLeft <= 0);
 const has = type => ready(type).length > 0;
-const count = type => S.pieces.filter(p => p.type === type).length;
-const spendRate = () => S.pieces.reduce((a, p) => a + PARTS[p.type].cost, 0);
+const count = type => type === "spot" ? S.pieces.filter(p => p.spot).length : S.pieces.filter(p => p.type === type).length;
+const partOf = p => PARTS[p.spot ? "spot" : p.type];
+const spendRate = () => S.pieces.reduce((a, p) => a + partOf(p).cost, 0);
 
 /* ================================================================== incidents */
 function fire(kind, text) {
@@ -1354,6 +1386,20 @@ function fire(kind, text) {
     updateRenew();
   } else if (kind === "cache-flush") {
     S.warm = 0; S.coldLeft = 25; log("page", text || "The cache restarted empty. Every read now goes to the database until it warms up.");
+  } else if (kind === "spot-warn") {
+    const spots = S.pieces.filter(p => p.spot && !p.doomed);
+    if (!spots.length) { log("info", (text || "EC2: Spot interruption notice.") + " You have no Spot servers, so nothing happens."); return; }
+    const rb = has("rebalance");
+    const doomed = rb ? spots.slice(0, Math.ceil(spots.length / 2)) : spots;   // several instance types: only one Spot pool is reclaimed
+    doomed.forEach(p => { p.doomed = true; });
+    if (rb) doomed.forEach(() => addPiece("spot"));   // replacements start now, from other Spot pools
+    log("page", (text || "EC2: Spot interruption notice.") + ` ${doomed.length} Spot server${doomed.length === 1 ? "" : "s"} will be taken back in about ${SPOT_WARN}s` + (rb ? `. Capacity rebalancing is already starting ${doomed.length} replacement${doomed.length === 1 ? "" : "s"} on other instance types; the rest of your Spot servers use other types and are not affected.` : ". They are all the same instance type, so they all go together."));
+    renderBoard();
+  } else if (kind === "spot-reclaim") {
+    const gone = S.pieces.filter(p => p.doomed);
+    gone.forEach(p => killPiece(p.id));
+    if (gone.length) { S.spotDry = SPOT_DRY; S.spotLostAt = S.t; }
+    log(gone.length ? "page" : "info", (text || "EC2 took back the warned Spot servers.") + (gone.length ? ` ${gone.length} app server${gone.length === 1 ? "" : "s"} gone.` + (has("rebalance") ? "" : " That instance type has no Spot capacity for a while.") : " None were left to take."));
   } else if (kind === "db-blip") {
     S.blipLeft = BLIP_TIME; log("page", (text || "The database stalled.") + ` It answers less than a third of the usual queries for about ${BLIP_TIME}s.`);
   } else if (kind === "region-fail") {
@@ -1453,6 +1499,7 @@ function step(dt) {
   if (natDown) { payFailed = Math.max(payFailed, pay * NAT_FAIL); payStuck = 0; payQueued = 0; }
   // client retries: each failed request is sent again. Immediate retries multiply load; backoff + jitter spreads them and a retry budget caps them
   const retryReq = L.retry ? (has("jitter") ? Math.min(dynLegit * (S.prevFail || 0) * RETRY_SAFE, dynLegit * RETRY_BUDGET) : dynLegit * (S.prevFail || 0) * RETRY_X) : 0;
+  if (S.spotDry > 0) S.spotDry = Math.max(0, S.spotDry - dt);
   if (S.blipLeft > 0) { S.blipLeft = Math.max(0, S.blipLeft - dt); if (S.blipLeft === 0) log("good", "The database is answering normally again."); }
   // app tier
   const slowCost = queue ? heavy * 0.3 : heavy * 5;
@@ -1613,6 +1660,7 @@ function place(type, zone) {
   const part = PARTS[type];
   if (zone !== part.zone) { toast(`${part.name} goes in the ${ZONE_NAMES[part.zone]} column. ${part.what}`); return false; }
   if (count(type) >= part.max) { toast(`You can have at most ${part.max} ${part.name.toLowerCase()}${part.max > 1 ? "s" : ""}.`); return false; }
+  if (type === "spot" && S.spotDry > 0 && !has("rebalance")) { toast("No Spot capacity for this instance type right now: AWS just took it back. Use App servers (On-Demand), or add Capacity rebalancing to spread Spot over several instance types."); return false; }
   if (spendRate() + part.cost > L.cap) { if (type === "app") S.capBlocked = true; toast(`Over budget: this would cost $${spendRate() + part.cost} an hour. Your limit is $${L.cap}. Remove something first.`); return false; }
   const p = addPiece(type);
   mark("+ " + part.name, "part");
@@ -1622,7 +1670,7 @@ function place(type, zone) {
 }
 function removePiece(id) {
   const p = S.pieces.find(x => x.id === id); if (!p || p.fixed) return;
-  S.pieces = S.pieces.filter(x => x !== p); mark("− " + PARTS[p.type].name, "part"); log("info", `${PARTS[p.type].name} removed.`); renderBoard();
+  S.pieces = S.pieces.filter(x => x !== p); mark("− " + partOf(p).name, "part"); log("info", `${partOf(p).name} removed.`); renderBoard();
 }
 
 /* ================================================================== inspector: the numbers behind each part */
@@ -1766,6 +1814,7 @@ const SKILLS = [
   { id: "analysis", name: "Judging a release by orders", keys: ["quiet"], level: "quiet", part: "analysis", how: "Stop a release that breaks checkout while every server looks healthy." },
   { id: "leak", name: "Spotting a memory leak", keys: ["leak"], level: "leak", how: "See that a release slowly chokes servers, and roll it back." },
   { id: "failover", name: "Database failover", keys: ["dbdown"], level: "failover", how: "Have a standby ready before the database dies." },
+  { id: "spot", name: "Using Spot safely", keys: ["spotgone"], level: "spot", how: "Save money with Spot servers and survive AWS taking them back." },
   { id: "retry", name: "Taming retries", keys: ["retrystorm"], level: "retry", how: "Stop a short blip from turning into a long outage with backoff, jitter and a retry budget." },
   { id: "region", name: "Surviving a region outage", keys: ["regiondown"], level: "region", how: "Have a copy of the site running in a second region before the main one fails." },
   { id: "spof", name: "Finding hidden single points", keys: ["natdown", "stalepool"], level: "gameday", how: "Keep orders flowing when a zone dies, including the shared parts that lived there." },
@@ -2033,6 +2082,8 @@ const READ_MORE = {
   canary: ["Canary releases in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/canary/"],
   nat: ["NAT gateways in Amazon VPC", "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html"],
   proxy: ["Amazon RDS Proxy", "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html"],
+  spot: ["Spot Instance interruption notices", "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html"],
+  rebalance: ["Capacity Rebalancing in EC2 Auto Scaling", "https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-capacity-rebalancing.html"],
   jitter: ["AWS SDK retry behavior: backoff, jitter and the retry quota", "https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html"],
   region2: ["Disaster recovery options in the cloud (AWS whitepaper)", "https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html"],
   analysis: ["Analysis and progressive delivery in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/analysis/"],
@@ -2052,6 +2103,8 @@ const WRONG_FIX = {
   auto: "It reacts after load rises, and each new server needs seconds to start. For a peak you know about, add servers before it.",
   canary: "Rarely wrong: on a busy site it is cheap insurance for every release.",
   nat: "Not needed when servers have public addresses or reach outside services through VPC endpoints. It also costs money per zone and per gigabyte, so count your outbound traffic.",
+  spot: "Not for anything that cannot stop at short notice: a single database, a long job with no checkpoints, or a fleet so small that losing a few servers takes the site down.",
+  rebalance: "It only helps Spot servers. With an all On-Demand fleet there is nothing to rebalance, and with a single instance type there is nowhere to move to.",
   jitter: "Backoff makes each failed request take longer to succeed. For a user waiting on a screen, one quick retry may be better; and never retry requests that are not safe to repeat, such as a payment without an idempotency key.",
   region2: "It costs money every hour for an outage that may come once a year, and it adds work: every release, setting and secret must reach both regions. For a small internal tool, backups you can restore in a few hours may be enough.",
   proxy: "Adds a small delay to every query and costs extra. A small app with short-lived connections and retries may not need it.",
@@ -2068,7 +2121,7 @@ const WRONG_FIX = {
 };
 function showPartCard(id, anchor) {
   const p = S.pieces.find(x => x.id === id); if (!p) return;
-  const part = PARTS[p.type], card = $("#partCard"), r = anchor.getBoundingClientRect();
+  const part = partOf(p), card = $("#partCard"), r = anchor.getBoundingClientRect();
   const status = p.bootLeft > 0 ? `Starting: ready in ${Math.ceil(p.bootLeft)}s` : p.type === "app" && S.m ? `Running in zone ${p.az || "A"}. App servers are ${Math.round(S.m.uA * 100)}% busy.` : "Running.";
   card.innerHTML = `<div class="pc-h"><span class="tag">${part.tag}</span><b>${part.name}</b><button class="pc-x" aria-label="Close">×</button></div>
     <div class="pc-m">$${part.cost}/h · ready in ${part.boot}s · ${status}</div>
@@ -2254,14 +2307,14 @@ function renderBoard() {
     const zone = z.dataset.z; if (zone === "users") continue;
     const chips = z.querySelector(".chips"); chips.innerHTML = "";
     for (const p of S.pieces.filter(x => PARTS[x.type].zone === zone)) {
-      const part = PARTS[p.type];
+      const part = partOf(p);
       const onNew = p.type === "app" && p.bootLeft <= 0 && (newVer === "all" || (newVer === "one" && firstApp));
       if (p.type === "app" && p.bootLeft <= 0) firstApp = false;
       const down = p.type === "db" && S.dbDown > 0;
       const c = document.createElement("div");
       c.className = "chip" + (p.fixed ? " fixed" : "") + (p.bootLeft > 0 ? " boot" : "") + (p.auto ? " auto" : "") + (down ? " down" : "") + (onNew ? " newver" : "");
       c.dataset.id = p.id; c.title = part.what + (onNew ? " Running the new release." : "");
-      const label = down ? "Primary DB · DOWN" : part.name + (onNew ? " · new" : "") + (p.id === S.failoverTo ? " · promoting" : "");
+      const label = down ? "Primary DB · DOWN" : part.name + (p.doomed ? " · leaving" : "") + (onNew ? " · new" : "") + (p.id === S.failoverTo ? " · promoting" : "");
       c.innerHTML = `<span class="t">${part.tag}</span><span class="n">${label}</span>${p.az ? `<span class="az">${p.az}</span>` : ""}${p.fixed ? "" : `<button class="x" aria-label="Remove ${part.name}">×</button>`}<span class="pb"></span>`;
       if (!p.fixed) c.querySelector(".x").onclick = e => { e.stopPropagation(); removePiece(p.id); };
       chips.appendChild(c);
@@ -2298,7 +2351,7 @@ function updateLive() {
   for (const p of S.pieces) {
     const c = document.querySelector(`.chip[data-id="${p.id}"]`); if (!c) continue;
     const booting = p.bootLeft > 0; c.classList.toggle("boot", booting);
-    c.querySelector(".pb").style.width = booting ? (100 * (1 - p.bootLeft / PARTS[p.type].boot)) + "%" : "0";
+    c.querySelector(".pb").style.width = booting ? (100 * (1 - p.bootLeft / partOf(p).boot)) + "%" : "0";
   }
   $("#rpsV").textContent = Math.round(m.legit + m.bots);
   $("#p95V").textContent = Math.round(m.p95) + " ms"; $("#p95V").style.color = m.p95 > 800 ? "var(--bad)" : "var(--ink)";
@@ -2549,6 +2602,9 @@ const WORDS = [
   ["NAT gateway", "The door private servers use to call the internet (payments, email). If there is only one, it is in one zone, and losing that zone shuts the door for all."],
   ["Connection pool", "A set of open database connections an app keeps ready. Fast, but after a failover they can still point at the old database."],
   ["Single point of failure", "Anything that exists only once, so losing it takes everything down: one NAT gateway, one primary, one person who knows the password."],
+  ["Spot Instance", "Spare AWS server capacity sold at a big discount. AWS can take it back with a 2-minute warning when it needs the capacity."],
+  ["On-Demand", "A normal AWS server at the full price. AWS never takes it back; you pay for it while it runs."],
+  ["Spot pool", "Spot capacity of one instance type in one zone. A reclaim usually hits one pool, so using several instance types spreads the risk."],
   ["Retry storm", "When failed requests are retried so fast and so often that the retries themselves overload the system, keeping it down after the first problem is gone. Also called a metastable failure."],
   ["Backoff and jitter", "Backoff: wait longer before each new retry. Jitter: pick a random moment inside that wait, so thousands of clients do not all retry at the same instant."],
   ["Retry budget", "A limit on how many retries a client may send compared with normal requests. When most requests fail, it stops retrying and returns the error at once."],
@@ -2599,6 +2655,36 @@ resource "aws_route" "out" {
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.per_zone[each.key].id
 }`],
+  spot: ["Terraform", `resource "aws_autoscaling_group" "web" {
+  min_size            = 2
+  max_size            = 12
+  vpc_zone_identifier = aws_subnet.private[*].id
+  capacity_rebalance  = true          # replace Spot at the warning
+  mixed_instances_policy {
+    instances_distribution {
+      on_demand_base_capacity                  = 2   # never below this
+      on_demand_percentage_above_base_capacity = 0   # the rest is Spot
+      spot_allocation_strategy                 = "price-capacity-optimized"
+    }
+    launch_template {
+      launch_template_specification {
+        launch_template_id = aws_launch_template.web.id
+      }
+      override { instance_type = "m6i.large" }   # several types
+      override { instance_type = "m5.large" }    # = several Spot pools
+      override { instance_type = "m7i.large" }
+    }
+  }
+}`],
+  rebalance: ["AWS CLI", `# Turn on Capacity Rebalancing for an existing group
+aws autoscaling update-auto-scaling-group \\
+  --auto-scaling-group-name web \\
+  --capacity-rebalance
+
+# See which Spot pools are likely to have capacity
+aws ec2 get-spot-placement-scores \\
+  --instance-types m6i.large m5.large m7i.large \\
+  --target-capacity 6 --region-names us-east-1`],
   jitter: ["JavaScript + AWS SDK", `// The AWS SDKs do this for you in "standard" retry mode
 // (~/.aws/config: retry_mode = standard, max_attempts = 3).
 // For your own HTTP calls: exponential backoff with full jitter
@@ -2711,6 +2797,8 @@ const LABS = {
   app: ["Free, on your laptop (kind)", ["Install kind and kubectl, then run kind create cluster.", "kubectl create deployment web --image=nginxdemos/hello --replicas=3", "kubectl get pods -o wide: three copies of the same app.", "kubectl delete pod <one of them> and watch Kubernetes start a new one at once.", "kubectl delete deployment web when you are done."]],
   auto: ["Free, on your laptop (kind)", ["Install metrics-server in your kind cluster (its README has a kind flag: --kubelet-insecure-tls).", "Create a Deployment with a CPU request, then kubectl autoscale deployment web --cpu-percent=60 --min=1 --max=5.", "Generate load with a busybox pod running a wget loop against the service.", "Watch kubectl get hpa -w: replicas rise as CPU climbs, then fall a few minutes after you stop."]],
   nat: ["Free, read-only, on any AWS account", ["Run: aws ec2 describe-nat-gateways --query 'NatGateways[].{id:NatGatewayId,subnet:SubnetId,state:State}'", "Run: aws ec2 describe-subnets to see which zone each NAT gateway's subnet is in.", "Run: aws ec2 describe-route-tables and look at the 0.0.0.0/0 route of each private route table.", "If private subnets in zone B point at a gateway in zone A, you have found a single point of failure. Nothing here creates or costs anything."]],
+  spot: ["Free, read-only, on any AWS account", ["Run: aws ec2 describe-spot-price-history --instance-types m5.large m6i.large m7i.large --product-descriptions Linux/UNIX --max-items 15", "Compare those prices with the On-Demand price on the EC2 pricing page: Spot is usually far cheaper.", "Open the Spot Instance advisor page (search for \"Spot Instance advisor\") and look up the frequency of interruption for each type.", "Write down which types you would mix, and why. Nothing was created, so there is nothing to clean up."]],
+  rebalance: ["AWS, about 20 minutes, set a $5 budget alarm first", ["Create a launch template with the smallest Amazon Linux image and an instance type such as t3.micro.", "Create an Auto Scaling group with desired capacity 2, a mixed instances policy with three instance types (t3.micro, t3a.micro, t2.micro), On-Demand base 0, and Capacity rebalancing on.", "Open the group's Activity tab and watch it launch Spot Instances of whichever types have capacity.", "In EventBridge, create a rule for the event type \"EC2 Instance Rebalance Recommendation\" that sends to a CloudWatch log group, so you can see warnings if they come.", "Clean up the same day: set desired capacity to 0, delete the group, then the launch template and the rule."]],
   jitter: ["Free, on your laptop (Node.js)", ["Write a tiny HTTP server that fails 50% of requests while a global flag is on, and counts every request it receives.", "Write a load script that starts 50 clients; each sends one request a second and, on failure, retries immediately up to 4 times.", "Turn the failure flag on for 5 seconds, then off. Watch the request count: it stays high after the flag is off.", "Change the clients to use the withRetry function above (backoff with full jitter, 3 attempts) and repeat: the count settles within a second or two.", "Clean up: stop both scripts."]],
   region2: ["AWS free tier, about 30 minutes, set a $5 budget alarm first", ["Create two S3 buckets in different regions (for example us-east-1 and eu-west-1) and upload an index.html to each that says which region it is.", "Create a CloudFront distribution with both buckets as origins (use Origin Access Control so the buckets stay private).", "Create an origin group: the us-east-1 bucket is primary, eu-west-1 is secondary, and fail over on 403, 404, 500, 502, 503 and 504.", "Point the default cache behaviour at the origin group, set a short cache time, and open the CloudFront address: you see the us-east-1 page.", "Delete index.html from the us-east-1 bucket, wait for the cache to expire, and reload: CloudFront now serves the eu-west-1 page. That is failover.", "Clean up the same day: disable and delete the distribution, then empty and delete both buckets."]],
   proxy: ["Free, on your laptop (Docker)", ["Start PostgreSQL and PgBouncer with docker compose; point a small script at PgBouncer that runs a query every second.", "Restart the PostgreSQL container and watch the script: PgBouncer reconnects and the script carries on after a short pause.", "Now point the script straight at PostgreSQL and restart it again: the script's open connection breaks until it reconnects.", "Clean up: docker compose down."]],
@@ -2738,7 +2826,7 @@ const EXTRA_GUIDE = [
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
-const GUIDE_ORDER = ["region2", "cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "jitter", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
+const GUIDE_ORDER = ["region2", "cdn", "waf", "lb", "acm", "app", "spot", "auto", "rebalance", "canary", "analysis", "breaker", "jitter", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
 const PART_GUIDE = {
   cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
     example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
@@ -2761,6 +2849,12 @@ const PART_GUIDE = {
   nat: { everyday: "Two dining rooms need two kitchen doors: if the only door is in the room that floods, nobody gets food.",
     example: "Zone A goes down. App servers in zone B are healthy, but every payment call fails because the only NAT gateway was in zone A. With a gateway in each zone, zone B carries on.",
     use: "Whenever servers in private subnets call anything outside (payments, email, other companies' APIs) and you run in more than one zone." },
+  spot: { everyday: "Cheap stand-by seats on a flight: the same seat at a third of the price, but the airline can ask you to get off if it needs the seat.",
+    example: "Six web servers: two On-Demand at $4 an hour and four Spot at $1 an hour save $12 an hour. When AWS sends a 2-minute warning, the load balancer stops sending them new visitors and the Auto Scaling group starts replacements.",
+    use: "Stateless web servers behind a load balancer, batch jobs, CI runners and anything else that can be stopped and restarted. Always keep an On-Demand base." },
+  rebalance: { everyday: "Booking stand-by seats on three different airlines, and rebooking as soon as one airline warns it may need the seats back.",
+    example: "Spot servers spread over m5, m6i and m7i. AWS reclaims the m5 pool: only those servers go, and their replacements on m6i and m7i were already started at the warning.",
+    use: "Any Auto Scaling group that uses Spot. Pair it with several instance types and the price-capacity-optimized allocation strategy." },
   jitter: { everyday: "When a shop door sticks, a calm crowd waits a moment and tries one by one, instead of everyone shoving at once.",
     example: "The database stalls for 3 seconds. With immediate retries, 380 visitors a second turn into over 1,000 requests a second and the site stays down. With backoff and jitter, the retries spread out and stop when most fail, and the site recovers as soon as the database does.",
     use: "Every client that retries: phone apps, services calling each other, AWS SDK calls. Set it before the first outage, because apps already on phones are hard to change." },
@@ -2857,6 +2951,8 @@ const QUIZ = [
     why: "Without a load balancer, nothing spreads requests across the servers." },
   { q: "The payment provider takes 8 seconds to answer, and soon every app server is stuck waiting.", a: "breaker", opts: ["breaker", "app", "cache"],
     why: "A timeout and circuit breaker stop waiting and fail fast, so your servers stay free for everyone else." },
+  { q: "AWS sent a 2-minute warning, and then all four of your cheap Spot servers disappeared at the same moment.", a: "rebalance", opts: ["rebalance", "spot", "replica"],
+    why: "They were all one instance type, so one Spot pool. Several types plus Capacity rebalancing mean a reclaim hits only part of the fleet and replacements start at the warning." },
   { q: "The database stalled for 3 seconds and is healthy again, but errors stay high and the servers get four times more requests than visitors send.", a: "jitter", opts: ["jitter", "replica", "waf"],
     why: "The extra requests are retries of failed requests. Backoff with jitter and a retry budget spread them out and stop them, so the servers can recover." },
   { q: "Half of all requests are images and CSS files that are the same for every visitor.", a: "cdn", opts: ["cache", "cdn", "replica"],
@@ -3177,8 +3273,8 @@ function setup(level) {
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
-const SHIFT_BUILD = { retry: "cloudwatch", region: "route53", launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
-const FIX_PART = { retrystorm: "jitter", regiondown: "region2", natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+const SHIFT_BUILD = { spot: "asg", retry: "cloudwatch", region: "route53", launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
+const FIX_PART = { spotgone: "rebalance", retrystorm: "jitter", regiondown: "region2", natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
   for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
