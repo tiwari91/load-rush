@@ -518,7 +518,7 @@ body.present .gtext { font-size: 17px; } body.present .gtitle { font-size: 20px;
         <canvas id="cErr"></canvas><span class="hint">Keep it under 1%.</span>
       </button>
       <button class="tile" data-insp="users">
-        <span class="label">Visitors a second</span><span class="val" id="rpsV">0</span>
+        <span class="label">Visitors a second</span><span class="val"><span id="rpsV">0</span> <em id="retryW" title="Extra requests a second that are retries of failed requests"></em></span>
         <canvas id="cRps"></canvas><span class="hint">Blue: people. Purple: bots.</span>
       </button>
     </div>
@@ -918,7 +918,7 @@ const REAL_INCIDENTS = {
   failover: ["GitHub, 21 October 2018", "A network problem lasting 43 seconds made GitHub's database fail over to another site. The two sites then disagreed about the data, and the site was degraded for about 24 hours while it was put right.", "https://github.blog/news-insights/company-news/oct21-post-incident-analysis/"],
   zone: ["Amazon S3, 28 February 2017", "While debugging, an engineer ran a command meant to remove a few servers; a typo removed far more. Restarting the systems that depended on them took hours, and much of the web that used S3 in that region broke.", "https://aws.amazon.com/message/41926/"],
   storm: ["AWS us-east-1, 7 December 2021", "Automatic scaling inside AWS's own network caused congestion, which then hid the monitoring the engineers needed to fix it. One problem caused the next, and many services in the region were impaired for hours.", "https://aws.amazon.com/message/12721/"],
-  region: ["AWS us-east-1, 19 to 20 October 2025", "A hidden race condition in DynamoDB's own DNS automation left its regional address with an empty record. Programs could no longer find DynamoDB, and many AWS services and customer sites in the region that depended on it failed for hours, while sites with a working second region carried on.", "https://aws.amazon.com/message/101925/"],
+  region: ["AWS us-east-1, 19 to 20 October 2025", "A hidden race condition in DynamoDB's own DNS automation left its regional address with an empty record. Programs could no longer find DynamoDB, and many AWS services and customer sites in the region that depended on it failed for hours.", "https://aws.amazon.com/message/101925/"],
   partner: ["Fastly, 8 June 2021", "A customer's normal settings change triggered a hidden bug in Fastly's CDN. Large sites that depended on it went down at the same moment, until Fastly disabled the change about an hour later.", "https://www.fastly.com/blog/summary-of-june-8-outage"],
 };
 const SANDBOX = { id: "sandbox", name: "Sandbox", sandbox: true, duration: Infinity, cap: 120,
@@ -1163,7 +1163,7 @@ const PROBLEMS = [
   { key: "regiondown", name: "Whole region down",
     when: (m, apps, r) => !!m.regionOut,
     text: (m, apps, r) => has("region2") ? "The whole region is down. Your second region is starting up; visitors move there as soon as it is ready." : "The whole region is down. Every zone, the cache, the database and its standby were all inside it, so every visit fails. More servers in this region cannot help.",
-    fix: "Add a <b>Second region</b>. Next time, have it running before the outage: it takes 12 seconds to set up here, and hours in real life if you start from nothing.",
+    fix: "Nothing to do in time: a <b>Second region</b> takes 12 seconds to set up here (hours in real life from nothing), and with every visit failing the site has only seconds left. Next time, add it when the warning comes, before the outage.",
     teach: { deeper: "Pick a disaster recovery option by RTO and RPO: backup and restore, pilot light, warm standby or active/active. Whatever you pick, practise the switch before you need it.", title: "Two zones, one region", diagram: [["Zone A and zone B", "both down", "hot"], ["Standby database", "same region, down", "hot"], ["Second region", "not built", "down"]],
     explain: "Zones are separate buildings inside one region. A region-wide fault (here, broken DNS inside the region) takes every zone down together, along with the standby database that lives in the same region.",
     q: "What keeps the site up when the whole region fails?", options: [["A ready copy in a second region, with health-checked DNS failover", true, "Yes. Route 53 health checks see the main region fail and send visitors to the copy."], ["More app servers in zone B", false, "Zone B is in the same region. It is down too."], ["A standby database", false, "Your standby is in the same region, so it went down with everything else."]] } },
@@ -1434,7 +1434,7 @@ function tickIncidents(dt) {
   }
   if (S.regionDown > 0) {
     if (S.drLeft === Infinity && has("region2")) { S.drLeft = DR_SWITCH; log("info", `The second region is ready. Health checks are moving visitors there (about ${DR_SWITCH}s).`); }
-    if (S.drLeft > 0 && S.drLeft !== Infinity) { S.drLeft -= dt; if (S.drLeft <= 0) { S.drLeft = 0; log("good", "Visitors now reach the second region. A few seconds of the newest orders had not been copied yet (that gap is your RPO)."); } }
+    if (S.drLeft > 0 && S.drLeft !== Infinity) { S.drLeft -= dt; if (S.drLeft <= 0) { S.drLeft = 0; renderBoard(); log("good", "Visitors now reach the second region. A few seconds of the newest orders had not been copied yet (that gap is your RPO)."); } }
     S.regionDown -= dt;
     if (S.regionDown <= 0) { S.regionDown = 0; log("good", S.drLeft === 0 ? "The main region has recovered. Traffic stays in the second region until you move it back on a quiet day." : "The main region has recovered. The site works again."); S.drLeft = 0; renderBoard(); }
   }
@@ -1560,7 +1560,7 @@ function step(dt) {
     failing: fA > 0 ? 1500 * fA : 0,
     partner: payStuck > 0 ? 2500 : 0,
   };
-  const p95 = Math.min(9999, lat.core + lat.edge + lat.stat + lat.slow + lat.failing + lat.partner);
+  const p95 = regionOut ? 9999 : Math.min(9999, lat.core + lat.edge + lat.stat + lat.slow + lat.failing + lat.partner);
 
   const burnErr = Math.max(0, err * 100 - 1) * 0.6, burnLat = p95 > 800 ? 1.5 + (p95 - 800) / 400 : 0;
   const burnBiz = quietLost * 100 * 0.06;   // lost orders hurt even when no page fails
@@ -1771,7 +1771,9 @@ function gameFromSnapshot(snap) {
     : LEVELS.find(l => l.id === snap.level);
   if (!level) return null;
   if (snap.sandbox) Object.assign(sandboxTraffic, snap.sandbox);
-  return { L: level, S: Object.assign(newState(), snap.S, { running: false }) };
+  const st = Object.assign(newState(), snap.S, { running: false });
+  for (const k of ["certDown", "drLeft"]) if (st[k] === null) st[k] = Infinity;   // JSON stores Infinity ("until you fix it") as null
+  return { L: level, S: st };
 }
 /* Progress code: stars and settings as one short text the player can copy to another browser or site. */
 function encodeProgress(p) { return "LR1-" + btoa(JSON.stringify(p)).replace(/=+$/, ""); }
@@ -2311,11 +2313,11 @@ function renderBoard() {
       const part = partOf(p);
       const onNew = p.type === "app" && p.bootLeft <= 0 && (newVer === "all" || (newVer === "one" && firstApp));
       if (p.type === "app" && p.bootLeft <= 0) firstApp = false;
-      const down = p.type === "db" && S.dbDown > 0;
+      const down = (p.type === "db" && S.dbDown > 0) || (S.regionDown > 0 && S.drLeft > 0 && p.type !== "region2");   // a region outage takes every part in the region down
       const c = document.createElement("div");
       c.className = "chip" + (p.fixed ? " fixed" : "") + (p.bootLeft > 0 ? " boot" : "") + (p.auto ? " auto" : "") + (down ? " down" : "") + (onNew ? " newver" : "");
       c.dataset.id = p.id; c.title = part.what + (onNew ? " Running the new release." : "");
-      const label = down ? "Primary DB · DOWN" : part.name + (p.doomed ? " · leaving" : "") + (onNew ? " · new" : "") + (p.id === S.failoverTo ? " · promoting" : "");
+      const label = down ? `${p.type === "db" ? "Primary DB" : part.name} · DOWN` : part.name + (p.doomed ? " · leaving" : "") + (onNew ? " · new" : "") + (p.id === S.failoverTo ? " · promoting" : "");
       c.innerHTML = `<span class="t">${part.tag}</span><span class="n">${label}</span>${p.az ? `<span class="az">${p.az}</span>` : ""}${p.fixed ? "" : `<button class="x" aria-label="Remove ${part.name}">×</button>`}<span class="pb"></span>`;
       if (!p.fixed) c.querySelector(".x").onclick = e => { e.stopPropagation(); removePiece(p.id); };
       chips.appendChild(c);
@@ -2356,6 +2358,7 @@ function updateLive() {
     c.querySelector(".pb").style.width = booting ? (100 * (1 - p.bootLeft / partOf(p).boot)) + "%" : "0";
   }
   $("#rpsV").textContent = Math.round(m.legit + m.bots);
+  const rw = $("#retryW"); rw.textContent = m.retryReq >= 5 ? `+${Math.round(m.retryReq)} retries` : ""; rw.style.color = m.retryReq > m.legit * 0.15 ? "var(--bad)" : "var(--warn)";
   $("#p95V").textContent = Math.round(m.p95) + " ms"; $("#p95V").style.color = m.p95 > 800 ? "var(--bad)" : "var(--ink)";
   const w = $("#p95W"); w.textContent = m.p95 > 800 ? "slow" : m.p95 > 400 ? "OK" : "fast"; w.style.color = m.p95 > 800 ? "var(--bad)" : m.p95 > 400 ? "var(--warn)" : "var(--ok)";
   updateGuide();
@@ -3311,7 +3314,8 @@ function end(win) {
   const st = starsFor(S, L, win), worst = worstProblem(S);
   if (!L.oncall && st > (stars[L.id] || 0)) { stars[L.id] = st; store.set("loadrush-stars", stars); }
   store.set("loadrush-game", null);
-  const next = L.oncall ? null : LEVELS[LEVELS.indexOf(L) + 1];
+  // the next shift you can play now: the AWS shifts unlock from the shift they build on, not from the one before them
+  const next = L.oncall ? null : LEVELS.slice(LEVELS.indexOf(L) + 1).find(l => unlockedId(l.id)) || null;
   // Score, best score, and (for the daily shift) the streak and the incident report
   const sc = L.sandbox ? null : scoreFor(S, L, win);
   const oc = L.oncall, bestKey = oc ? (oc.practice ? "practice" : L.id) : L.id;
