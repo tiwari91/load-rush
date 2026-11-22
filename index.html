@@ -286,6 +286,7 @@ button.sk { text-align: left; font: inherit; cursor: pointer; background: transp
 .chip { position: relative; display: flex; align-items: center; gap: 7px; padding: 5px 22px 5px 6px; border-radius: 6px; font: 500 11.5px var(--body);
   background: var(--panel-2); border: 1px solid var(--line-2); overflow: hidden; min-width: 0; line-height: 1.2; }
 .chip .n { min-width: 0; }
+.zone.many .zev { display: none; } .zone.many .chips { gap: 3px; } .zone.many .chip { padding-top: 3px; padding-bottom: 3px; }
 .chip .t { flex: none; min-width: 30px; text-align: center; font: 11px var(--display); padding: 1px 4px; border-radius: 4px; background: var(--ground); color: var(--accent); }
 .chip .az { margin-left: auto; font: 600 9.5px var(--mono); color: var(--ink-faint); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 3px; }
 .chip.fixed { padding-right: 8px; }
@@ -2319,6 +2320,7 @@ function renderBoard() {
       if (!p.fixed) c.querySelector(".x").onclick = e => { e.stopPropagation(); removePiece(p.id); };
       chips.appendChild(c);
     }
+    z.classList.toggle("many", chips.children.length > 6);   // a crowded column: tighter chips, and the everyday note makes room
   }
   for (const z of document.querySelectorAll(".zone[data-z]")) {
     const zone = z.dataset.z;
