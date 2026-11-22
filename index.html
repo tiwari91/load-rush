@@ -589,6 +589,8 @@ const PARTS = {
              what: "Blocks clients that send far too many requests, such as bots. Real users are not affected." },
   acm: { short: "Renews the HTTPS certificate by itself", name: "Auto-renew certs", tag: "TLS", zone: "entry", cost: 0, boot: 1, max: 1, real: "AWS Certificate Manager, Let's Encrypt with certbot",
              what: "Renews the site's HTTPS certificate automatically before it expires, so nobody has to remember the date." },
+  jitter: { short: "Retries wait longer each time, at random", name: "Backoff + jitter", tag: "BJ", zone: "app", cost: 0, boot: 2, max: 1, real: "AWS SDK standard retry mode (exponential backoff with full jitter and a retry quota), Envoy retry budgets, a remote-config switch for apps already on phones",
+             what: "Changes how apps retry a failed request: wait a little, then longer, at a random moment, and stop retrying when most requests are failing. A short outage then stays short instead of being multiplied by retries." },
   region2: { short: "A ready copy of the site in another region", name: "Second region", tag: "DR", zone: "entry", cost: 6, boot: 12, max: 1, real: "a warm standby in a second AWS Region: Route 53 failover records with health checks, an Aurora Global Database or cross-Region read replica, the same app deployed by infrastructure as code",
              what: "A smaller, always-running copy of the whole site in another AWS Region, with the data copied there continuously. When the main region stops answering, health checks move visitors to the copy in about 2 seconds here (about a minute in real life)." },
   db: { short: "Stores your data",      name: "Primary DB",    tag: "DB",  zone: "data",  cost: 6, boot: 0, max: 1, real: "RDS PostgreSQL",
@@ -596,7 +598,7 @@ const PARTS = {
 };
 const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
 const APP_CAP = 150, DB_CAP = 400, REP_CAP = 300, WORKER_RATE = 15;
-const REGION_TIME = 45, DR_SWITCH = 2, NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
+const RETRY_X = 4, RETRY_SAFE = 0.4, RETRY_BUDGET = 0.1, BLIP_TIME = 3, BLIP_CAP = 0.3, REGION_TIME = 45, DR_SWITCH = 2, NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
 
 /* ================================================================== shifts */
 const ramp = (t, t0, t1, a, b) => t <= t0 ? a : t >= t1 ? b : a + (b - a) * (t - t0) / (t1 - t0);
@@ -852,6 +854,22 @@ const LEVELS = [
     learned: ["Real systems combine all of these. Each part removes one kind of load.",
               "Good teams fix the cause (bots, slow requests, repeated reads) before buying more servers.",
               "Hands-on: build the whole thing on AWS: CloudFront, a load balancer, containers, ElastiCache, SQS and RDS."] },
+  { id: "retry", after: "partner", watch: "At 0:30 the database stalls for 3 seconds. Watch what happens after it recovers: are failed pages falling back to zero?", staff: ["Your app retries, the SDK retries, and the load balancer retries. With 3 tries at each of 3 layers, how many requests can one click become?", "Which requests are safe to retry? What makes a payment safe to send twice?"], principal: ["The phone app with the bad retry loop is already on a million phones. What could you have built in advance to change its behaviour without a new release?", "A short blip caused a long outage. How do you test for problems that only appear when the system is pushed past a tipping point?"],
+    name: "Retry Storm", duration: 100, cap: 32,
+    blurb: "A 3-second blip turns into a long outage.",
+    story: "The database stalls for a few seconds. Every phone app that gets an error tries again at once, up to 4 more times, so the servers suddenly get far more requests than real users sent. Those extra requests cause more errors, which cause more retries, and the site stays down long after the database is fine. Like a shop door that sticks for a moment: everyone outside pushes at once, and now nobody can get in.",
+    brief: "About 380 visitors a second from a phone app. Your three app servers run at about 80%. The app retries a failed request immediately, up to 4 times. At 0:30 a storage hiccup stalls the database for 3 seconds, and it may happen again later.",
+    task: "Get the site back to normal after the blip, and keep it there.",
+    given: ["lb", "app", "app", "app", "cache", "db"], tray: ["app", "auto", "cache", "jitter"], fresh: ["jitter"], retry: true,
+    traffic: t => T({ legit: ramp(t, 0, 25, 340, 380), staticFrac: 0.05 }),
+    events: [{ t: 8, kind: "info", text: "Storage team: the database disks may stall for a few seconds tonight. Mobile team: the app retries failed requests straight away, up to 4 times.", prep: ["jitter"], keys: ["retrystorm"] },
+             { t: 30, kind: "db-blip", text: "The database stalled (a storage hiccup)." },
+             { t: 72, kind: "db-blip", text: "The database stalled again." }],
+    learned: ["Retries multiply load exactly when the system is weakest. A short blip can become a long outage that stays after the cause is gone (a metastable failure).",
+              "Retry with exponential backoff and random jitter, cap the attempts, and stop retrying when most requests fail (a retry budget). The AWS SDKs' standard retry mode does all three.",
+              "Retry at one layer only, and only requests that are safe to repeat (idempotent).",
+              "Adding servers can break the loop, but it costs money and does not fix the cause.",
+              "Hands-on: call a tiny local endpoint that fails 50% of the time with a loop of 50 clients, first with immediate retries, then with full jitter, and count the requests the server receives."] },
   { id: "region", after: "zone", watch: "Your whole site lives in one AWS Region. Two zones and a standby database protect you from a zone or a database failing, not from the region itself.", staff: ["Which of your dependencies are regional (DNS, secrets, container images, the identity provider)? Would your second region still work if the first is completely gone?", "Fail over automatically on a health check, or have a person press the button? What does a false alarm cost each way?"], principal: ["A warm standby costs money every hour of every day for a few hours of outage a year. How do you decide the business is willing to pay?", "How much data can you lose (RPO) and how long can you be down (RTO)? Who signs off those numbers, and how often do you prove them with a test?"],
     name: "Region Down", duration: 110, cap: 46,
     blurb: "The whole AWS region fails. Zones and standbys do not help.",
@@ -1105,6 +1123,13 @@ let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, hea
 /* Every problem the game can detect, in priority order. Each one has, in one place:
    when (is it happening), text (what the pager says), fix (the Mid-level hint), teach (the Teach mode card). */
 const PROBLEMS = [
+  { key: "retrystorm", name: "Retry storm",
+    when: (m, apps, r) => L.retry && m.retryReq > m.legit * 0.15,
+    text: (m, apps, r) => `Real visitors send about ${Math.round(m.legit)} requests a second, but ${Math.round(m.retryReq)} more a second are retries of failed requests. The retries cause more failures, which cause more retries${S.blipLeft > 0 ? "" : ", even though the database has recovered"}.`,
+    fix: "Add <b>Backoff + jitter</b> so apps wait, retry at random moments and stop when most requests fail. More app servers also break the loop, at a cost.",
+    teach: { deeper: "Retry at one layer only, cap the attempts, and only retry requests that are safe to repeat. Watch the share of requests that are retries; a sudden jump is a warning sign.", title: "A blip that would not end", diagram: [["Real visitors", "normal"], ["Retries", "4 per failure", "hot"], ["App servers", "overloaded", "hot"]],
+    explain: "Each failed request comes straight back up to 4 times. When enough requests fail, the retries alone push the servers past their limit, so even more fail. The loop keeps going after the original cause is gone.",
+    q: "What stops the loop?", options: [["Backoff with jitter and a retry budget", true, "Yes. Retries spread out over time, and stop when most requests are failing, so the servers can recover."], ["Retry more times", false, "More retries mean more load on servers that are already overloaded."], ["A bigger database", false, "The database already recovered. The servers are drowning in retries."]] } },
   { key: "regiondown", name: "Whole region down",
     when: (m, apps, r) => !!m.regionOut,
     text: (m, apps, r) => has("region2") ? "The whole region is down. Your second region is starting up; visitors move there as soon as it is ready." : "The whole region is down. Every zone, the cache, the database and its standby were all inside it, so every visit fails. More servers in this region cannot help.",
@@ -1281,7 +1306,7 @@ function newState() {
 }
 /* A note on the end-of-shift timeline. kind: incident, fix or part. */
 function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
-const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow", "region-fail": "Region down" };
+const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow", "region-fail": "Region down", "db-blip": "Database stall" };
 function addPiece(type, opts = {}) {
   const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
   if (type === "app") {
@@ -1329,6 +1354,8 @@ function fire(kind, text) {
     updateRenew();
   } else if (kind === "cache-flush") {
     S.warm = 0; S.coldLeft = 25; log("page", text || "The cache restarted empty. Every read now goes to the database until it warms up.");
+  } else if (kind === "db-blip") {
+    S.blipLeft = BLIP_TIME; log("page", (text || "The database stalled.") + ` It answers less than a third of the usual queries for about ${BLIP_TIME}s.`);
   } else if (kind === "region-fail") {
     if (S.regionDown > 0) return;
     S.regionDown = REGION_TIME;
@@ -1424,9 +1451,12 @@ function step(dt) {
   if (S.partnerSlow > 0 && pay > 0) { if (!breaker) payStuck = pay; else if (queue) payQueued = pay; else payFailed = pay; }
   const natDown = !!(L.nat && S.azDown > 0 && pay > 0 && !has("nat"));   // the only NAT gateway was in zone A: payment calls cannot get out
   if (natDown) { payFailed = Math.max(payFailed, pay * NAT_FAIL); payStuck = 0; payQueued = 0; }
+  // client retries: each failed request is sent again. Immediate retries multiply load; backoff + jitter spreads them and a retry budget caps them
+  const retryReq = L.retry ? (has("jitter") ? Math.min(dynLegit * (S.prevFail || 0) * RETRY_SAFE, dynLegit * RETRY_BUDGET) : dynLegit * (S.prevFail || 0) * RETRY_X) : 0;
+  if (S.blipLeft > 0) { S.blipLeft = Math.max(0, S.blipLeft - dt); if (S.blipLeft === 0) log("good", "The database is answering normally again."); }
   // app tier
   const slowCost = queue ? heavy * 0.3 : heavy * 5;
-  const appLoad = (dynLegit - heavy) + botsPass + staticToApp * 0.4 + slowCost + payStuck * 30;
+  const appLoad = (dynLegit - heavy) + retryReq + botsPass + staticToApp * 0.4 + slowCost + payStuck * 30;
   const health = rel && rel.kind === "leak" ? 1 - rel.share * (1 - Math.max(0.15, 1 - rel.age / 30)) : 1;
   const used = lb ? nApp : Math.min(nApp, 1);
   const capA = used * APP_CAP * health;
@@ -1439,7 +1469,7 @@ function step(dt) {
   if (S.certDown > 0 && S.certDown !== Infinity) { S.certDown -= dt; if (S.certDown <= 0) { S.certDown = 0; log("good", "New certificate installed. Browsers open the site again."); updateRenew(); } }
   S.warm = cache ? Math.min(1, S.warm + dt / (S.coldLeft > 0 ? 25 : 6)) : 0;   // after a restart the cache refills slowly
   const hit = 0.75 * S.warm;
-  const servedDyn = (dynLegit + botsPass) * (1 - fA);
+  const servedDyn = (dynLegit + retryReq + botsPass) * (1 - fA);
   const readsAll = servedDyn * tr.readFrac, reads = readsAll * (1 - hit);
   let writes = servedDyn * (1 - tr.readFrac);
   // background jobs
@@ -1457,8 +1487,9 @@ function step(dt) {
   let primLoad = 0, failedDb = 0, uD = 0;
   if (dbUp) {
     primLoad = writes + jobWrites + (reads - readsOnRep);
-    const fD = primLoad <= DB_CAP ? 0 : 1 - DB_CAP / primLoad;
-    failedDb = (writes + reads - readsOnRep) * fD; uD = primLoad / DB_CAP;
+    const dbCap = DB_CAP * (S.blipLeft > 0 ? BLIP_CAP : 1);   // a storage stall: the database answers far fewer queries for a few seconds
+    const fD = primLoad <= dbCap ? 0 : 1 - dbCap / primLoad;
+    failedDb = (writes + reads - readsOnRep) * fD; uD = primLoad / dbCap;
   } else failedDb = writes + (reads - readsOnRep);
   const dbFailShare = Math.min(1, (servedDyn > 0 ? failedDb / servedDyn : 0) + (S.staleLeft > 0 ? STALE_FAIL : 0));   // stale pools: connections still point at the old primary
   const uR = repCap ? readsOnRep / repCap : 0;
@@ -1468,6 +1499,7 @@ function step(dt) {
   const failApp = (dynLegit + staticToApp) * fA;
   const failDb = legitServed * dbFailShare;
   const failBug = legitServed * (1 - dbFailShare) * bugFail;
+  if (L.retry) S.prevFail = Math.min(1, fA + (1 - fA) * dbFailShare);   // what share of requests failed this tick: the clients retry those next tick
   const regionOut = S.regionDown > 0 && S.drLeft > 0;   // the whole region is down and visitors have nowhere else to go yet
   const failedLegit = regionOut ? legit : failApp + failDb + failBug + qFail + payFailed;
   const err = regionOut ? 1 : S.certDown > 0 ? Math.max(0.12, legit > 0 ? Math.min(1, failedLegit / legit) : 0) : legit > 0 ? Math.min(1, failedLegit / legit) : 0;   // an expired certificate: browsers show a security warning and many visitors leave
@@ -1512,7 +1544,7 @@ function step(dt) {
   S.m = { tr, legit, bots, botsPass, staticReq, dynLegit, cdnServed, staticToApp, heavy, pay, payStuck, payQueued, payFailed,
     lb, nApp, used, health, capA, appLoad, uA, fA, bugFail, cache, hit, readsAll, reads, writes, jobWrites, jobsIn, jobsDone,
     workers, queue, reps, repCap, readsOnRep, primLoad, uD, uR, dbUp, failApp, failDb, failBug, qFail, failedLegit, err,
-    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, natDown, regionOut, burn, drop, out, cdn, waf, breaker };
+    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, natDown, regionOut, retryReq, burn, drop, out, cdn, waf, breaker };
   coach(dt);
 
   if (!L.sandbox) {
@@ -1734,6 +1766,7 @@ const SKILLS = [
   { id: "analysis", name: "Judging a release by orders", keys: ["quiet"], level: "quiet", part: "analysis", how: "Stop a release that breaks checkout while every server looks healthy." },
   { id: "leak", name: "Spotting a memory leak", keys: ["leak"], level: "leak", how: "See that a release slowly chokes servers, and roll it back." },
   { id: "failover", name: "Database failover", keys: ["dbdown"], level: "failover", how: "Have a standby ready before the database dies." },
+  { id: "retry", name: "Taming retries", keys: ["retrystorm"], level: "retry", how: "Stop a short blip from turning into a long outage with backoff, jitter and a retry budget." },
   { id: "region", name: "Surviving a region outage", keys: ["regiondown"], level: "region", how: "Have a copy of the site running in a second region before the main one fails." },
   { id: "spof", name: "Finding hidden single points", keys: ["natdown", "stalepool"], level: "gameday", how: "Keep orders flowing when a zone dies, including the shared parts that lived there." },
   { id: "zones", name: "Surviving a zone outage", keys: ["azdown"], level: "zone", how: "Keep enough servers to lose half of them at once." },
@@ -2000,6 +2033,7 @@ const READ_MORE = {
   canary: ["Canary releases in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/canary/"],
   nat: ["NAT gateways in Amazon VPC", "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html"],
   proxy: ["Amazon RDS Proxy", "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html"],
+  jitter: ["AWS SDK retry behavior: backoff, jitter and the retry quota", "https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html"],
   region2: ["Disaster recovery options in the cloud (AWS whitepaper)", "https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html"],
   analysis: ["Analysis and progressive delivery in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/analysis/"],
   breaker: ["Circuit breaker, by Martin Fowler", "https://martinfowler.com/bliki/CircuitBreaker.html"],
@@ -2018,6 +2052,7 @@ const WRONG_FIX = {
   auto: "It reacts after load rises, and each new server needs seconds to start. For a peak you know about, add servers before it.",
   canary: "Rarely wrong: on a busy site it is cheap insurance for every release.",
   nat: "Not needed when servers have public addresses or reach outside services through VPC endpoints. It also costs money per zone and per gigabyte, so count your outbound traffic.",
+  jitter: "Backoff makes each failed request take longer to succeed. For a user waiting on a screen, one quick retry may be better; and never retry requests that are not safe to repeat, such as a payment without an idempotency key.",
   region2: "It costs money every hour for an outage that may come once a year, and it adds work: every release, setting and secret must reach both regions. For a small internal tool, backups you can restore in a few hours may be enough.",
   proxy: "Adds a small delay to every query and costs extra. A small app with short-lived connections and retries may not need it.",
   analysis: "Useless until something measures the business: first count orders (or payments, sign-ups) per version, then let the release watch that number.",
@@ -2514,6 +2549,9 @@ const WORDS = [
   ["NAT gateway", "The door private servers use to call the internet (payments, email). If there is only one, it is in one zone, and losing that zone shuts the door for all."],
   ["Connection pool", "A set of open database connections an app keeps ready. Fast, but after a failover they can still point at the old database."],
   ["Single point of failure", "Anything that exists only once, so losing it takes everything down: one NAT gateway, one primary, one person who knows the password."],
+  ["Retry storm", "When failed requests are retried so fast and so often that the retries themselves overload the system, keeping it down after the first problem is gone. Also called a metastable failure."],
+  ["Backoff and jitter", "Backoff: wait longer before each new retry. Jitter: pick a random moment inside that wait, so thousands of clients do not all retry at the same instant."],
+  ["Retry budget", "A limit on how many retries a client may send compared with normal requests. When most requests fail, it stops retrying and returns the error at once."],
   ["Region", "A geographic area of AWS (like us-east-1 in Virginia) with several zones. Zones fail on their own; a region-wide fault takes every zone in it down together."],
   ["RTO and RPO", "Recovery time objective: how long you may be down. Recovery point objective: how much recent data you may lose. Together they decide which disaster recovery option you need."],
   ["Warm standby", "A smaller copy of the whole site, always running in another region with the data copied over, ready to take visitors in minutes. Pilot light is cheaper: the data is copied but servers stay off until needed."],
@@ -2560,6 +2598,19 @@ resource "aws_route" "out" {
   route_table_id         = each.value.id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.per_zone[each.key].id
+}`],
+  jitter: ["JavaScript + AWS SDK", `// The AWS SDKs do this for you in "standard" retry mode
+// (~/.aws/config: retry_mode = standard, max_attempts = 3).
+// For your own HTTP calls: exponential backoff with full jitter
+async function withRetry(call, attempts = 3, base = 50, cap = 2000) {
+  for (let i = 0; ; i++) {
+    try { return await call(); }
+    catch (err) {
+      if (i + 1 >= attempts || !err.retryable) throw err;
+      const wait = Math.random() * Math.min(cap, base * 2 ** i);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
 }`],
   region2: ["Terraform", `resource "aws_route53_health_check" "main" {
   fqdn              = "app.us-east-1.example.com"
@@ -2660,6 +2711,7 @@ const LABS = {
   app: ["Free, on your laptop (kind)", ["Install kind and kubectl, then run kind create cluster.", "kubectl create deployment web --image=nginxdemos/hello --replicas=3", "kubectl get pods -o wide: three copies of the same app.", "kubectl delete pod <one of them> and watch Kubernetes start a new one at once.", "kubectl delete deployment web when you are done."]],
   auto: ["Free, on your laptop (kind)", ["Install metrics-server in your kind cluster (its README has a kind flag: --kubelet-insecure-tls).", "Create a Deployment with a CPU request, then kubectl autoscale deployment web --cpu-percent=60 --min=1 --max=5.", "Generate load with a busybox pod running a wget loop against the service.", "Watch kubectl get hpa -w: replicas rise as CPU climbs, then fall a few minutes after you stop."]],
   nat: ["Free, read-only, on any AWS account", ["Run: aws ec2 describe-nat-gateways --query 'NatGateways[].{id:NatGatewayId,subnet:SubnetId,state:State}'", "Run: aws ec2 describe-subnets to see which zone each NAT gateway's subnet is in.", "Run: aws ec2 describe-route-tables and look at the 0.0.0.0/0 route of each private route table.", "If private subnets in zone B point at a gateway in zone A, you have found a single point of failure. Nothing here creates or costs anything."]],
+  jitter: ["Free, on your laptop (Node.js)", ["Write a tiny HTTP server that fails 50% of requests while a global flag is on, and counts every request it receives.", "Write a load script that starts 50 clients; each sends one request a second and, on failure, retries immediately up to 4 times.", "Turn the failure flag on for 5 seconds, then off. Watch the request count: it stays high after the flag is off.", "Change the clients to use the withRetry function above (backoff with full jitter, 3 attempts) and repeat: the count settles within a second or two.", "Clean up: stop both scripts."]],
   region2: ["AWS free tier, about 30 minutes, set a $5 budget alarm first", ["Create two S3 buckets in different regions (for example us-east-1 and eu-west-1) and upload an index.html to each that says which region it is.", "Create a CloudFront distribution with both buckets as origins (use Origin Access Control so the buckets stay private).", "Create an origin group: the us-east-1 bucket is primary, eu-west-1 is secondary, and fail over on 403, 404, 500, 502, 503 and 504.", "Point the default cache behaviour at the origin group, set a short cache time, and open the CloudFront address: you see the us-east-1 page.", "Delete index.html from the us-east-1 bucket, wait for the cache to expire, and reload: CloudFront now serves the eu-west-1 page. That is failover.", "Clean up the same day: disable and delete the distribution, then empty and delete both buckets."]],
   proxy: ["Free, on your laptop (Docker)", ["Start PostgreSQL and PgBouncer with docker compose; point a small script at PgBouncer that runs a query every second.", "Restart the PostgreSQL container and watch the script: PgBouncer reconnects and the script carries on after a short pause.", "Now point the script straight at PostgreSQL and restart it again: the script's open connection breaks until it reconnects.", "Clean up: docker compose down."]],
   analysis: ["Free, on your laptop (kind + Prometheus)", ["Install Argo Rollouts and the kube-prometheus-stack chart in a kind cluster.", "Make a tiny app that counts checkout_started_total and orders_saved_total, labelled with its version.", "Release it as a Rollout with a canary step at 10% and the AnalysisTemplate above.", "Release a version that returns 200 but skips saving the order. Watch the analysis fail and the rollout abort, while every Pod stays Ready.", "Clean up: kind delete cluster."]],
@@ -2686,7 +2738,7 @@ const EXTRA_GUIDE = [
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
-const GUIDE_ORDER = ["region2", "cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
+const GUIDE_ORDER = ["region2", "cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "jitter", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
 const PART_GUIDE = {
   cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
     example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
@@ -2709,6 +2761,9 @@ const PART_GUIDE = {
   nat: { everyday: "Two dining rooms need two kitchen doors: if the only door is in the room that floods, nobody gets food.",
     example: "Zone A goes down. App servers in zone B are healthy, but every payment call fails because the only NAT gateway was in zone A. With a gateway in each zone, zone B carries on.",
     use: "Whenever servers in private subnets call anything outside (payments, email, other companies' APIs) and you run in more than one zone." },
+  jitter: { everyday: "When a shop door sticks, a calm crowd waits a moment and tries one by one, instead of everyone shoving at once.",
+    example: "The database stalls for 3 seconds. With immediate retries, 380 visitors a second turn into over 1,000 requests a second and the site stays down. With backoff and jitter, the retries spread out and stop when most fail, and the site recovers as soon as the database does.",
+    use: "Every client that retries: phone apps, services calling each other, AWS SDK calls. Set it before the first outage, because apps already on phones are hard to change." },
   region2: { everyday: "A second shop on another street, already stocked, with signs ready to send customers there if your street is closed.",
     example: "The whole of us-east-1 has a DNS fault. Route 53 health checks on the main site fail three times in a row, and the failover record sends visitors to the warm standby in eu-west-1, which scales up while it serves them.",
     use: "When the business cannot be down for hours, or a regulator requires it. Pick the cheapest option that meets your RTO and RPO: backup and restore, pilot light, warm standby or active/active." },
@@ -2802,6 +2857,8 @@ const QUIZ = [
     why: "Without a load balancer, nothing spreads requests across the servers." },
   { q: "The payment provider takes 8 seconds to answer, and soon every app server is stuck waiting.", a: "breaker", opts: ["breaker", "app", "cache"],
     why: "A timeout and circuit breaker stop waiting and fail fast, so your servers stay free for everyone else." },
+  { q: "The database stalled for 3 seconds and is healthy again, but errors stay high and the servers get four times more requests than visitors send.", a: "jitter", opts: ["jitter", "replica", "waf"],
+    why: "The extra requests are retries of failed requests. Backoff with jitter and a retry budget spread them out and stop them, so the servers can recover." },
   { q: "Half of all requests are images and CSS files that are the same for every visitor.", a: "cdn", opts: ["cache", "cdn", "replica"],
     why: "A CDN serves files that never change from near the user, so they never reach your app." },
   { q: "Zone A is down. All servers in zone B are healthy and pages load, but every payment fails.", a: "nat", opts: ["nat", "app", "replica"],
@@ -3120,8 +3177,8 @@ function setup(level) {
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
-const SHIFT_BUILD = { region: "route53", launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
-const FIX_PART = { regiondown: "region2", natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+const SHIFT_BUILD = { retry: "cloudwatch", region: "route53", launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
+const FIX_PART = { retrystorm: "jitter", regiondown: "region2", natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
   for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
