@@ -1791,7 +1791,9 @@ function decodeProgress(code) {
     const scores = plainObj(p.scores, v => Number.isFinite(v) && v >= 0 && v < 1e6);
     const oncall = plainObj(p.oncall, v => Number.isFinite(v) && v >= 0 && v < 1e6);
     const exp = plainObj(p.exp, v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
-    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall, exp };
+    const roadmap = plainObj(p.roadmap, v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
+    for (const k of Object.keys(roadmap)) if (!ROADMAP.some(r => r.id === k)) delete roadmap[k];
+    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall, exp, roadmap };
   } catch { return null; }
 }
 /* Hourly cost as a rough monthly figure (730 hours in a month). */
@@ -3090,6 +3092,119 @@ const BUILDS = [
     ["Set the alarm action to the SNS topic", "When the alarm fires, you get paged."],
     ["Test it: trigger errors on purpose and check the alert arrives", "An alarm that has never fired is a hope, not a plan."] ] },
 ];
+/* ================================================================== AWS roadmap: 100 days in 10 stages, each tied to the game */
+const ROADMAP = [
+  { id: "r1", days: "1-10", name: "Safe account, IAM and the CLI", goal: "Set up an AWS account you cannot accidentally run up a bill on, and learn who is allowed to do what.",
+    learn: ["Regions and Availability Zones", "Root user with MFA, then never use it", "IAM users, groups, roles and policies", "AWS CLI profiles", "A budget alarm before anything else"],
+    shifts: ["launch"], builds: ["iam"], parts: ["app"],
+    build: "Create an admin user with MFA, a $5 monthly budget alarm, and a CLI profile. Then create a role that can only read one S3 bucket.",
+    breakIt: "Use that role to delete the bucket and read the AccessDenied error: which policy line would allow it?",
+    local: "Moto or LocalStack: practise aws iam create-role and attach-role-policy without a real account.",
+    real: "Free. A budget alarm and IAM cost nothing." },
+  { id: "r2", days: "11-20", name: "Networking: VPC, subnets and NAT", goal: "Know where your servers live and how traffic gets in and out.",
+    learn: ["VPC and CIDR ranges", "Public and private subnets in two zones", "Route tables and the internet gateway", "NAT gateway per zone", "Security groups vs network ACLs"],
+    shifts: ["zone", "gameday"], builds: ["vpc"], parts: ["nat", "lb"],
+    build: "Build a VPC with a public and a private subnet in each of two zones, first in the console, then again in Terraform.",
+    breakIt: "Delete the private route to the NAT gateway and watch a private server lose the internet. Put it back.",
+    local: "LocalStack or Moto accept the EC2/VPC calls, so you can practise the CLI and Terraform; real traffic needs real AWS.",
+    real: "NAT gateways cost money per hour: create them, test, and delete them the same day." },
+  { id: "r3", days: "21-30", name: "Compute: EC2, launch templates and Spot", goal: "Run your app on servers you can replace at any time.",
+    learn: ["EC2 instance types and AMIs", "User data to install the app at boot", "Launch templates", "EBS volumes and snapshots", "On-Demand vs Spot"],
+    shifts: ["launch", "spot"], builds: [], parts: ["app", "spot", "rebalance"],
+    build: "Launch an EC2 web server from a launch template whose user data installs and starts the app, with an IAM role instead of keys on the server.",
+    breakIt: "Terminate the server and start a new one from the template. If anything was lost, it lived on the server: move it out.",
+    local: "Docker: run the same app as a container to test the boot script before you pay for EC2.",
+    real: "A t3.micro or t4g.micro fits the free tier for many accounts; check yours and stop it after." },
+  { id: "r4", days: "31-40", name: "Storage and databases", goal: "Learn where application data lives, and prove you can get it back.",
+    learn: ["S3 buckets, versioning and lifecycle rules", "EBS vs EFS", "RDS with a Multi-AZ standby", "DynamoDB basics", "Backups, snapshots and encryption with KMS"],
+    shifts: ["failover", "storm"], builds: ["rds"], parts: ["db", "standby", "replica", "proxy"],
+    build: "An app that stores uploaded files in S3 and their details in RDS, with encryption on both.",
+    breakIt: "Delete a table row on purpose, then restore the database to a point in time just before it. Time how long it took.",
+    local: "Docker: Postgres and MinIO (an S3-compatible store) give you the same code paths for free; LocalStack also emulates S3.",
+    real: "RDS is free-tier eligible for a small single-AZ instance; Multi-AZ costs extra, so test it briefly." },
+  { id: "r5", days: "41-50", name: "Caching and content delivery", goal: "Make the common case fast and cheap.",
+    learn: ["ElastiCache for Redis", "Cache-aside and time-to-live", "Cache stampedes", "CloudFront in front of S3", "Cache invalidation"],
+    shifts: ["sale", "viral", "stampede"], builds: ["cache", "cdn"], parts: ["cache", "cdn"],
+    build: "Put CloudFront in front of an S3 bucket of images, and Redis in front of your slowest database query.",
+    breakIt: "Flush the cache while a load tool runs and watch the database. What stops the stampede?",
+    local: "Docker: Redis in one command (docker run redis). CloudFront itself needs real AWS.",
+    real: "CloudFront and S3 have free-tier allowances; ElastiCache does not, so delete it after the test." },
+  { id: "r6", days: "51-60", name: "Scaling and high availability", goal: "Stop depending on one server, one zone, or one region.",
+    learn: ["Application Load Balancer and health checks", "Auto Scaling groups and policies", "Multi-AZ deployment", "Route 53 records and failover", "Disaster recovery: RTO and RPO"],
+    shifts: ["launch", "zone", "region"], builds: ["alb", "asg", "route53"], parts: ["lb", "auto", "region2"],
+    build: "A load-balanced app: an Auto Scaling group across two zones behind an ALB, with a health check page.",
+    breakIt: "Terminate an instance and time how long until the group replaces it and the ALB sends it traffic again.",
+    local: "kind (Kubernetes in Docker): a Deployment behind a Service shows the same idea of replaceable copies.",
+    real: "An ALB costs money per hour: build, test, and delete the same day." },
+  { id: "r7", days: "61-70", name: "Serverless and events", goal: "Learn when not to run servers at all, and how to handle messages that fail or arrive twice.",
+    learn: ["Lambda", "API Gateway", "SQS with a dead-letter queue", "SNS and EventBridge", "Idempotency, retries with backoff and jitter"],
+    shifts: ["checkout", "payday", "retry", "partner"], builds: ["apigw", "sqs"], parts: ["queue", "worker", "jitter", "breaker"],
+    build: "An event-driven order flow: API Gateway to Lambda to SQS to a worker Lambda, with a dead-letter queue.",
+    breakIt: "Send a broken message and the same order twice. The broken one must land in the dead-letter queue; the duplicate must not charge twice.",
+    local: "LocalStack: SQS, SNS and Lambda run locally with a free Hobby account; Moto covers SQS and SNS without one.",
+    real: "Lambda, API Gateway and SQS have generous free tiers; this stage can cost nothing." },
+  { id: "r8", days: "71-80", name: "Containers, infrastructure as code and CI/CD", goal: "Stop clicking in the console: every change comes from Git and is reviewed first.",
+    learn: ["Docker images and ECR", "ECS on Fargate", "Terraform modules and remote state", "Reading a plan before applying it", "A pipeline with canary releases and rollback"],
+    shifts: ["deploy", "quiet", "release"], builds: ["ecs"], parts: ["canary", "analysis"],
+    build: "Deploy the stage 6 app from Git: Terraform for the infrastructure, a pipeline that shows the plan for review, and a canary release.",
+    breakIt: "Release a version that breaks checkout but passes health checks. Does your pipeline notice and roll back?",
+    local: "LocalStack with tflocal runs terraform plan and apply locally; Docker builds and runs the image.",
+    real: "Fargate bills per second while tasks run: scale the service to 0 when you finish." },
+  { id: "r9", days: "81-90", name: "Security, monitoring and cost", goal: "Prove the app is safe, see problems before users do, and know what it costs.",
+    learn: ["CloudWatch metrics, logs and alarms", "CloudTrail: who changed what", "Least-privilege IAM", "Secrets Manager", "WAF and ACM certificates", "AWS Budgets and Cost Explorer"],
+    shifts: ["bots", "cert", "leak"], builds: ["cloudwatch", "waf"], parts: ["waf", "acm"],
+    build: "A dashboard with the four numbers that matter (traffic, errors, speed, saturation), alarms that page you, and a monthly budget.",
+    breakIt: "Make an alarm fire on purpose, then use CloudTrail to find who changed a security group yesterday.",
+    local: "Free: read-only checks such as aws iam get-account-authorization-details and aws cloudtrail lookup-events on your own account.",
+    real: "Basic CloudWatch metrics and the CloudTrail event history are free; WAF costs per rule per month." },
+  { id: "r10", days: "91-100", name: "Portfolio project and game day", goal: "One project you can explain end to end, including how it fails.",
+    learn: ["Architecture diagram", "Automated deployment from Git", "Security controls", "Failure tests (a game day)", "Cost estimate", "Written trade-offs and an incident report"],
+    shifts: ["gameday", "friday"], builds: [], parts: [],
+    build: "Combine stages 4 to 9 into one project in a public GitHub repo, with a diagram, a cost estimate and a README that explains each trade-off.",
+    breakIt: "Run a game day: switch off a zone, kill the database, and send a bad release. Write a short incident report for each.",
+    local: "Keep a docker compose version of the whole app so anyone can run it without an AWS account.",
+    real: "Tear the AWS version down after each demo and keep the Terraform to rebuild it in minutes." },
+];
+function showRoadmap(fromMenu, openId) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const done = store.get("loadrush-roadmap", {}), built = store.get("loadrush-build", {});
+  const lv = id => LEVELS.find(l => l.id === id);
+  const status = r => { const sw = r.shifts.filter(id => stars[id]).length, bw = r.builds.filter(id => built[id]).length; return { sw, bw }; };
+  const nDone = ROADMAP.filter(r => done[r.id]).length, nextId = (ROADMAP.find(r => !done[r.id]) || {}).id;
+  if (!openId) {
+    openSheet(`<div class="kick">AWS roadmap</div><h2>100 days of AWS, 10 days at a time</h2>
+      <p class="gintro">Don't just memorise services: build, break and explain each one. Every stage lists what to learn, the Load Rush shifts and AWS Builder steps that teach it, one thing to build, one thing to break on purpose, and how to practise for free first.</p>
+      <div class="bprog"><span>${nDone} of ${ROADMAP.length} stages built</span><div class="skillbar"><i style="width:${100 * nDone / ROADMAP.length}%"></i></div></div>
+      <div class="levels">${ROADMAP.map((r, i) => { const st = status(r); return `<button class="lv${r.id === nextId ? " next" : ""}${done[r.id] ? " built" : ""}" data-rm="${r.id}">
+        <span class="n">Days ${r.days}${r.id === nextId ? " <em>next</em>" : ""}${done[r.id] ? " · ✓ built" : ""}</span><span class="t">${i + 1}. ${r.name}</span><span class="d">${r.goal}</span>
+        <span class="s">${r.shifts.length ? `shifts ${st.sw}/${r.shifts.length}` : ""}${r.builds.length ? ` · AWS Builder ${st.bw}/${r.builds.length}` : ""}</span></button>`; }).join("")}</div>
+      <div class="acts"><button class="btn" id="bRmBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back, "home");
+    $("#bRmBack").onclick = back;
+    for (const el of document.querySelectorAll("[data-rm]")) el.onclick = () => showRoadmap(fromMenu, el.dataset.rm);
+    return;
+  }
+  const i = ROADMAP.findIndex(r => r.id === openId), r = ROADMAP[i];
+  const shiftBtn = id => { const l = lv(id); if (!l) return ""; const ok = unlockedId(id); return `<button class="btn${stars[id] || !ok ? "" : " go"}" data-rs="${id}" ${ok ? "" : `disabled style="opacity:.5;cursor:not-allowed" title="Win ${prevOf(LEVELS.indexOf(l)).name} first, or turn on Unlock every shift in Settings."`}>${stars[id] ? "✓ " : ""}${l.name}${ok ? "" : " (locked)"}</button>`; };
+  openSheet(`<div class="kick">AWS roadmap · stage ${i + 1} of ${ROADMAP.length} · days ${r.days}</div><h2>${r.name}</h2>
+    <p class="gintro">${r.goal}</p>
+    <h3>Learn</h3><ul>${r.learn.map(x => `<li>${x}</li>`).join("")}</ul>
+    ${r.shifts.length ? `<h3>Play it in Load Rush first</h3><div class="acts">${r.shifts.map(shiftBtn).join("")}</div>` : ""}
+    ${r.builds.length ? `<h3>Put the real setup in order (AWS Builder)</h3><div class="acts">${r.builds.map(id => { const b = BUILDS.find(x => x.id === id); return b ? `<button class="btn" data-rb="${id}">${built[id] ? "✓ " : ""}${b.name}</button>` : ""; }).join("")}</div>` : ""}
+    ${r.parts.length ? `<h3>Read the parts</h3><div class="acts">${r.parts.filter(t => PARTS[t]).map(t => `<button class="btn" data-rp="${t}">${PARTS[t].name}</button>`).join("")}</div>` : ""}
+    <h3>Build</h3><p>${r.build}</p>
+    <h3>Break it on purpose</h3><p>${r.breakIt}</p>
+    <h3>Practise for free first</h3><p>${r.local}</p>
+    <p class="real"><b>On real AWS:</b> ${r.real} Set a $5 budget alarm before you start, and delete what you made the same day.</p>
+    <label class="switch" for="rmDone" style="margin-top:10px"><input type="checkbox" id="rmDone" ${done[r.id] ? "checked" : ""}> I built it and broke it <small>ticks this stage; saved with your progress</small></label>
+    <div class="acts" style="margin-top:12px">${i > 0 ? `<button class="btn" data-rm="${ROADMAP[i - 1].id}">← ${ROADMAP[i - 1].name}</button>` : ""}<button class="btn" id="bRmAll">All stages</button>${i < ROADMAP.length - 1 ? `<button class="btn" data-rm="${ROADMAP[i + 1].id}">${ROADMAP[i + 1].name} →</button>` : ""}</div>`, () => showRoadmap(fromMenu), "home");
+  $("#bRmAll").onclick = () => showRoadmap(fromMenu);
+  for (const el of document.querySelectorAll("[data-rm]")) el.onclick = () => showRoadmap(fromMenu, el.dataset.rm);
+  for (const el of document.querySelectorAll("[data-rs]")) el.onclick = () => load(lv(el.dataset.rs));
+  for (const el of document.querySelectorAll("[data-rb]")) el.onclick = () => playBuild(BUILDS.find(b => b.id === el.dataset.rb), fromMenu);
+  for (const el of document.querySelectorAll("[data-rp]")) el.onclick = () => showGuide(fromMenu, el.dataset.rp);
+  $("#rmDone").onchange = e => { const d = store.get("loadrush-roadmap", {}); if (e.target.checked) d[r.id] = dayKey(); else delete d[r.id]; store.set("loadrush-roadmap", d); if (e.target.checked) toast(`Stage ${i + 1} ticked: ${r.name}.`); };
+}
 function showBuilder(fromMenu) {
   if (S) setRunning(false);
   const back = () => fromMenu ? showMenu() : closeSheet();
@@ -3513,6 +3628,7 @@ function showMenu() {
       <div class="levels">
         ${card("tour", "1 minute", "Tutorial", "A guided start on the first shift.")}
         ${card("guide", "Read", "Parts guide", "What each part does, with an everyday comparison and the real AWS service.")}
+        ${card("roadmap", "100 days", "AWS roadmap", "Ten stages from a safe account to a portfolio project: learn, play the shift, build it, break it.", Object.keys(store.get("loadrush-roadmap", {})).length ? `${Object.keys(store.get("loadrush-roadmap", {})).length}/${ROADMAP.length} stages` : "")}
         ${card("build", `${BUILDS.length} AWS services`, "AWS Builder", "Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.")}
         ${card("graphs", `${GRAPHS.length} dashboards`, "Read the graph", "Look at the lines and name the incident.", store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "")}
         ${card("quiz", `${QUIZ.length} questions`, "Quiz", "Which part fixes this?", store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "")}
@@ -3568,6 +3684,7 @@ function showMenu() {
     if (b.dataset.i === "build") { showBuilder(true); return; }
     if (b.dataset.i === "graphs") { showGraphs(true); return; }
     if (b.dataset.i === "interview") { showInterview(true); return; }
+    if (b.dataset.i === "roadmap") { showRoadmap(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }
@@ -3694,7 +3811,7 @@ function saveGame() { store.set("loadrush-game", gameSnapshot(S, L)); }
 addEventListener("pagehide", saveGame);
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
 const progressNow = () => ({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false),
-  skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}) });
+  skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}), roadmap: store.get("loadrush-roadmap", {}) });
 function copyProgress() {
   const code = encodeProgress(progressNow());
   const box = $("#progCode"); box.value = code; box.hidden = false; box.select();
@@ -3708,17 +3825,17 @@ function loadProgress() {
   stars = p.stars; store.set("loadrush-stars", stars);
   role = p.role; store.set("loadrush-role", role);
   setTeach(p.teach); setPresent(p.present); store.set("loadrush-tour-done", p.tour);
-  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall); store.set("loadrush-exp", p.exp);
+  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall); store.set("loadrush-exp", p.exp); store.set("loadrush-roadmap", p.roadmap);
   showMenu(); toast(`Progress loaded: ${Object.keys(stars).length} shift${Object.keys(stars).length === 1 ? "" : "s"} with stars.`);
 }
 
 /* Progress link: the page address always carries your progress (#p=LR1-...), so a bookmark or the link opened on
    another device brings your stars back. Updated automatically whenever progress or settings change. */
-const LINK_KEYS = new Set(["loadrush-stars", "loadrush-role", "loadrush-teach", "loadrush-present", "loadrush-tour-done", "loadrush-skills", "loadrush-scores", "loadrush-oncall", "loadrush-exp"]);
+const LINK_KEYS = new Set(["loadrush-stars", "loadrush-role", "loadrush-teach", "loadrush-present", "loadrush-tour-done", "loadrush-skills", "loadrush-scores", "loadrush-oncall", "loadrush-exp", "loadrush-roadmap"]);
 let linkTimer = null;
 function syncLink() {
   linkTimer = null;
-  if (!Object.keys(stars).length && !Object.keys(store.get("loadrush-skills", {})).length) return;   // nothing worth carrying yet
+  if (!Object.keys(stars).length && !Object.keys(store.get("loadrush-skills", {})).length && !Object.keys(store.get("loadrush-roadmap", {})).length) return;   // nothing worth carrying yet
   try { history.replaceState(history.state, "", location.pathname + location.search + "#p=" + encodeProgress(progressNow())); } catch {}
 }
 { const set = store.set; store.set = (k, v) => { set.call(store, k, v); if (LINK_KEYS.has(k) && !linkTimer) linkTimer = setTimeout(syncLink, 300); }; }
@@ -3735,6 +3852,7 @@ function progressFromLink() {
   store.set("loadrush-oncall", best(store.get("loadrush-oncall", {}), p.oncall));
   store.set("loadrush-skills", Object.assign({}, p.skills, store.get("loadrush-skills", {})));
   store.set("loadrush-exp", Object.assign({}, p.exp, store.get("loadrush-exp", {})));
+  store.set("loadrush-roadmap", Object.assign({}, p.roadmap, store.get("loadrush-roadmap", {})));
   if (p.tour) store.set("loadrush-tour-done", true);
   if (fresh) { role = p.role; store.set("loadrush-role", role); setTeach(p.teach); setPresent(p.present); }
   if (gained) setTimeout(() => toast(`Progress restored from your link: ${gained} shift${gained === 1 ? "" : "s"} with stars.`), 400);
