@@ -4,7 +4,7 @@ A browser game about keeping a website up while traffic changes in real time.
 
 **Play:** https://tiwari91.github.io/load-rush/
 
-Requests flow through your system as moving dots. Drag parts onto the board (load balancer, auto-renewing HTTPS certificates, a NAT gateway in every zone, app servers, autoscaler, cache, read replicas, standby database, RDS Proxy, CDN, rate limiter, queue and workers, canary deploys, canary analysis that watches orders, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
+Requests flow through your system as moving dots. Drag parts onto the board (a second region with DNS failover, load balancer, auto-renewing HTTPS certificates, a NAT gateway in every zone, app servers, autoscaler, cache, read replicas, standby database, RDS Proxy, CDN, rate limiter, queue and workers, canary deploys, canary analysis that watches orders, timeouts and a circuit breaker) and keep the error budget above zero until the shift ends.
 
 ## Shifts
 
@@ -32,6 +32,9 @@ Big days:
 17. Release Week: a leaky release, a bot wave and a rushed hotfix
 18. Black Friday: everything at once
 
+AWS in the real world (each unlocks when you win the shift it builds on):
+19. Region Down: the whole AWS region fails; two zones and a standby database do not help without a second region
+
 Every shift also explains its problem **in everyday terms** (a shop, a bank, a restaurant), so developers from any background (frontend, mobile, data, QA) can follow the use case.
 
 There is also a Sandbox with traffic sliders, buttons to break things on purpose, and ten guided experiments (load balancer, cache, bot flood, CDN, queue, safe database failover, losing a zone, a canary catching a bad release, a circuit breaker against slow payments, surviving a cold cache), each ticked off when you reach its goal.
@@ -55,9 +58,9 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Cost challenge:** win a shift under 80%, 90% or 100% of its spend limit for a Gold, Silver or Bronze cost medal, shown on the shift card.
 - **Write-up practice:** after an On call shift, write the 3-line incident summary yourself, then compare it with a model answer built from your shift.
 - **Challenge a friend:** after winning a shift, copy a link with your score; whoever opens it sees the challenge on the menu.
-- **It really happened:** eight shift briefs link a real outage with the same lesson and the company's own write-up (Knight Capital 2012, Slack 2021, Cloudflare 2019, Facebook 2021, GitHub 2018, Amazon S3 2017, AWS us-east-1 2021, Fastly 2021).
+- **It really happened:** nine shift briefs link a real outage with the same lesson and the company's own write-up (Knight Capital 2012, Slack 2021, Cloudflare 2019, Facebook 2021, GitHub 2018, Amazon S3 2017, AWS us-east-1 2021, Fastly 2021, AWS us-east-1 October 2025).
 - **Interview practice:** senior and staff-level questions from every shift, one at a time, with the points a good answer covers.
-- **Quiz: which part fixes this?** Thirteen short scenarios; each answer explains why and gives the everyday comparison.
+- **Quiz: which part fixes this?** Fourteen short scenarios; each answer explains why and gives the everyday comparison.
 
 - **Parts guide** (menu, and from Words): every part in the order a visit travels, with what it does, an everyday comparison, a concrete example, when to use it, when it is the wrong fix, and the shift that teaches it. Clicking a part on the board also shows its everyday comparison.
 
@@ -72,7 +75,7 @@ you can copy and share. **Practice on call** gives random shifts as often as you
 - **Teach mode** pauses the game when something goes wrong, shows a small diagram, and asks what you would do.
 - **Part cards:** click any part on the board to see what it does, what it costs, when it is the wrong fix, and
   its real-world name.
-- **Learning path:** 15 skills (scaling out, caching, CDN, rate limiting, queues, canaries, judging a release by orders, failover, zones, finding hidden single points,
+- **Learning path:** 16 skills (surviving a region outage, scaling out, caching, CDN, rate limiting, queues, canaries, judging a release by orders, failover, zones, finding hidden single points,
   timeouts, autoscaling, cost, judgement), each ticked off the first time you show it in a shift.
 - **Who is playing:** Mid-level gets hints; Staff and Principal get fewer hints and discussion questions after each shift.
 - **After each shift:** a chart of site health with what happened and what you did, plus the problem that hurt most and its fix, and the shift's availability as a percentage, with what that would mean over a month against a 99.99% promise.

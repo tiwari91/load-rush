@@ -589,12 +589,14 @@ const PARTS = {
              what: "Blocks clients that send far too many requests, such as bots. Real users are not affected." },
   acm: { short: "Renews the HTTPS certificate by itself", name: "Auto-renew certs", tag: "TLS", zone: "entry", cost: 0, boot: 1, max: 1, real: "AWS Certificate Manager, Let's Encrypt with certbot",
              what: "Renews the site's HTTPS certificate automatically before it expires, so nobody has to remember the date." },
+  region2: { short: "A ready copy of the site in another region", name: "Second region", tag: "DR", zone: "entry", cost: 6, boot: 12, max: 1, real: "a warm standby in a second AWS Region: Route 53 failover records with health checks, an Aurora Global Database or cross-Region read replica, the same app deployed by infrastructure as code",
+             what: "A smaller, always-running copy of the whole site in another AWS Region, with the data copied there continuously. When the main region stops answering, health checks move visitors to the copy in about 2 seconds here (about a minute in real life)." },
   db: { short: "Stores your data",      name: "Primary DB",    tag: "DB",  zone: "data",  cost: 6, boot: 0, max: 1, real: "RDS PostgreSQL",
              what: "Your one source of truth. Handles about 400 reads + writes a second." },
 };
 const ZONE_NAMES = { edge: "Edge", entry: "Entry", app: "App tier", cache: "Cache", jobs: "Background jobs", data: "Database" };
 const APP_CAP = 150, DB_CAP = 400, REP_CAP = 300, WORKER_RATE = 15;
-const NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
+const REGION_TIME = 45, DR_SWITCH = 2, NAT_FAIL = 1, STALE_TIME = 15, STALE_FAIL = 0.06, QUIET_FAIL = 0.4, ANALYSIS_TIME = 3, BUG_FAIL = 0.09, LEAK_TIME = 40, ROLLBACK_TIME = 5, CANARY_TIME = 8, FAILOVER_TIME = 3, RESTORE_TIME = 40, AZ_TIME = 40, PARTNER_TIME = 30;
 
 /* ================================================================== shifts */
 const ramp = (t, t0, t1, a, b) => t <= t0 ? a : t >= t1 ? b : a + (b - a) * (t - t0) / (t1 - t0);
@@ -850,6 +852,21 @@ const LEVELS = [
     learned: ["Real systems combine all of these. Each part removes one kind of load.",
               "Good teams fix the cause (bots, slow requests, repeated reads) before buying more servers.",
               "Hands-on: build the whole thing on AWS: CloudFront, a load balancer, containers, ElastiCache, SQS and RDS."] },
+  { id: "region", after: "zone", watch: "Your whole site lives in one AWS Region. Two zones and a standby database protect you from a zone or a database failing, not from the region itself.", staff: ["Which of your dependencies are regional (DNS, secrets, container images, the identity provider)? Would your second region still work if the first is completely gone?", "Fail over automatically on a health check, or have a person press the button? What does a false alarm cost each way?"], principal: ["A warm standby costs money every hour of every day for a few hours of outage a year. How do you decide the business is willing to pay?", "How much data can you lose (RPO) and how long can you be down (RTO)? Who signs off those numbers, and how often do you prove them with a test?"],
+    name: "Region Down", duration: 110, cap: 46,
+    blurb: "The whole AWS region fails. Zones and standbys do not help.",
+    story: "Spreading servers over two zones and keeping a standby database protects you when one building or one machine fails. It does not help when the whole region has a problem, as us-east-1 did in October 2025. Like a shop with two tills and a spare cashier: none of that matters when the whole street is closed. You need a second shop on another street, already stocked, and signs that send customers there.",
+    brief: "About 300 visitors a second, 5% of them paying. Everything runs in one AWS Region: app servers in two zones, a cache, a primary database and a standby. Tonight the region itself will have a major outage. A second region costs $6 an hour and takes 12 seconds to set up, so it has to be ready before the outage, not during it.",
+    task: "Keep the site up when the whole region goes down.",
+    given: ["lb", "app", "app", "app", "cache", "db", "standby"], tray: ["app", "auto", "cache", "region2"], fresh: ["region2"],
+    traffic: t => T({ legit: ramp(t, 0, 50, 260, 320), payFrac: 0.05 }),
+    events: [{ t: 8, kind: "info", text: "AWS Health: increased error rates for some services in our region. Engineers are looking at it. Our architecture review says \"multi-AZ, so we are safe\".", prep: ["region2"], keys: ["regiondown"] },
+             { t: 40, kind: "region-fail", text: "The whole region is failing: DNS inside the region is broken, and every service there returns errors." }],
+    learned: ["Zones protect you from one building failing; a second region protects you from the whole region failing. They are different promises.",
+              "Disaster recovery options, cheapest and slowest first: backup and restore (hours), pilot light (core data running, servers off: tens of minutes), warm standby (a smaller live copy: minutes), active/active (both regions serve all the time: near zero).",
+              "Agree two numbers with the business: RTO (how long you may be down) and RPO (how much recent data you may lose). They decide which option you pay for.",
+              "A second region you have never switched to is a guess. Practise the switch on a quiet day.",
+              "Hands-on (free tier): put CloudFront in front of two S3 buckets in different regions as an origin group, then break the first bucket and watch requests fail over to the second."] },
 ];
 /* A real outage with the same lesson as each shift, with the company's own write-up. */
 const REAL_INCIDENTS = {
@@ -860,6 +877,7 @@ const REAL_INCIDENTS = {
   failover: ["GitHub, 21 October 2018", "A network problem lasting 43 seconds made GitHub's database fail over to another site. The two sites then disagreed about the data, and the site was degraded for about 24 hours while it was put right.", "https://github.blog/news-insights/company-news/oct21-post-incident-analysis/"],
   zone: ["Amazon S3, 28 February 2017", "While debugging, an engineer ran a command meant to remove a few servers; a typo removed far more. Restarting the systems that depended on them took hours, and much of the web that used S3 in that region broke.", "https://aws.amazon.com/message/41926/"],
   storm: ["AWS us-east-1, 7 December 2021", "Automatic scaling inside AWS's own network caused congestion, which then hid the monitoring the engineers needed to fix it. One problem caused the next, and many services in the region were impaired for hours.", "https://aws.amazon.com/message/12721/"],
+  region: ["AWS us-east-1, 19 to 20 October 2025", "A hidden race condition in DynamoDB's own DNS automation left its regional address with an empty record. Programs could no longer find DynamoDB, and many AWS services and customer sites in the region that depended on it failed for hours, while sites with a working second region carried on.", "https://aws.amazon.com/message/101925/"],
   partner: ["Fastly, 8 June 2021", "A customer's normal settings change triggered a hidden bug in Fastly's CDN. Large sites that depended on it went down at the same moment, until Fastly disabled the change about an hour later.", "https://www.fastly.com/blog/summary-of-june-8-outage"],
 };
 const SANDBOX = { id: "sandbox", name: "Sandbox", sandbox: true, duration: Infinity, cap: 120,
@@ -1087,6 +1105,13 @@ let sandboxTraffic = { legit: 300, bots: 0, staticFrac: 0.3, readFrac: 0.85, hea
 /* Every problem the game can detect, in priority order. Each one has, in one place:
    when (is it happening), text (what the pager says), fix (the Mid-level hint), teach (the Teach mode card). */
 const PROBLEMS = [
+  { key: "regiondown", name: "Whole region down",
+    when: (m, apps, r) => !!m.regionOut,
+    text: (m, apps, r) => has("region2") ? "The whole region is down. Your second region is starting up; visitors move there as soon as it is ready." : "The whole region is down. Every zone, the cache, the database and its standby were all inside it, so every visit fails. More servers in this region cannot help.",
+    fix: "Add a <b>Second region</b>. Next time, have it running before the outage: it takes 12 seconds to set up here, and hours in real life if you start from nothing.",
+    teach: { deeper: "Pick a disaster recovery option by RTO and RPO: backup and restore, pilot light, warm standby or active/active. Whatever you pick, practise the switch before you need it.", title: "Two zones, one region", diagram: [["Zone A and zone B", "both down", "hot"], ["Standby database", "same region, down", "hot"], ["Second region", "not built", "down"]],
+    explain: "Zones are separate buildings inside one region. A region-wide fault (here, broken DNS inside the region) takes every zone down together, along with the standby database that lives in the same region.",
+    q: "What keeps the site up when the whole region fails?", options: [["A ready copy in a second region, with health-checked DNS failover", true, "Yes. Route 53 health checks see the main region fail and send visitors to the copy."], ["More app servers in zone B", false, "Zone B is in the same region. It is down too."], ["A standby database", false, "Your standby is in the same region, so it went down with everything else."]] } },
   { key: "cert", name: "HTTPS certificate expired",
     when: (m, apps, r) => S.certDown > 0,
     text: (m, apps, r) => "The site's HTTPS certificate has expired. Browsers show a big security warning, and many visitors leave instead of clicking through.",
@@ -1256,7 +1281,7 @@ function newState() {
 }
 /* A note on the end-of-shift timeline. kind: incident, fix or part. */
 function mark(label, kind) { if (S) S.marks.push({ t: S.t, label, kind }); }
-const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow" };
+const INCIDENT_NAMES = { crash: "Server crash", "deploy-bug": "Bad release", "deploy-leak": "Leaky release", "deploy-quiet": "Quiet bad release", "db-fail": "Database died", "az-fail": "Zone A down", "partner-slow": "Payments slow", "region-fail": "Region down" };
 function addPiece(type, opts = {}) {
   const p = { id: S.nextId++, type, bootLeft: opts.instant ? 0 : PARTS[type].boot, fixed: !!opts.fixed, auto: !!opts.auto };
   if (type === "app") {
@@ -1304,6 +1329,12 @@ function fire(kind, text) {
     updateRenew();
   } else if (kind === "cache-flush") {
     S.warm = 0; S.coldLeft = 25; log("page", text || "The cache restarted empty. Every read now goes to the database until it warms up.");
+  } else if (kind === "region-fail") {
+    if (S.regionDown > 0) return;
+    S.regionDown = REGION_TIME;
+    if (has("region2")) { S.drLeft = DR_SWITCH; log("page", (text || "The whole region is down.") + ` Health checks see it. Visitors are being sent to the second region (about ${DR_SWITCH}s).`); }
+    else { S.drLeft = Infinity; log("page", (text || "The whole region is down.") + " Every zone, the standby database and the cache are in the same region. There is nowhere else to send visitors."); }
+    renderBoard();
   } else if (kind === "partner-slow") {
     S.partnerSlow = PARTNER_TIME; log("page", text || "The payment provider now takes 8 seconds to answer.");
   } else log(kind, text);
@@ -1326,6 +1357,12 @@ function tickIncidents(dt) {
       else log("good", "Primary database restored from backup.");
       renderBoard();
     }
+  }
+  if (S.regionDown > 0) {
+    if (S.drLeft === Infinity && has("region2")) { S.drLeft = DR_SWITCH; log("info", `The second region is ready. Health checks are moving visitors there (about ${DR_SWITCH}s).`); }
+    if (S.drLeft > 0 && S.drLeft !== Infinity) { S.drLeft -= dt; if (S.drLeft <= 0) { S.drLeft = 0; log("good", "Visitors now reach the second region. A few seconds of the newest orders had not been copied yet (that gap is your RPO)."); } }
+    S.regionDown -= dt;
+    if (S.regionDown <= 0) { S.regionDown = 0; log("good", S.drLeft === 0 ? "The main region has recovered. Traffic stays in the second region until you move it back on a quiet day." : "The main region has recovered. The site works again."); S.drLeft = 0; renderBoard(); }
   }
   if (S.staleLeft > 0) { S.staleLeft = has("proxy") ? 0 : S.staleLeft - dt; if (S.staleLeft <= 0) { S.staleLeft = 0; log("good", "The connection pools have reconnected to the new primary."); } }
   if (L.nat && S.azDown > 0 && !S.natTold && S.m && S.m.pay > 0) { S.natTold = true; if (has("nat")) log("good", "Payment calls from zone B leave through zone B's own NAT gateway. Payments keep working."); else log("page", "Zone B's servers are healthy, but every payment call fails: they all left through the NAT gateway in zone A."); }
@@ -1431,8 +1468,9 @@ function step(dt) {
   const failApp = (dynLegit + staticToApp) * fA;
   const failDb = legitServed * dbFailShare;
   const failBug = legitServed * (1 - dbFailShare) * bugFail;
-  const failedLegit = failApp + failDb + failBug + qFail + payFailed;
-  const err = S.certDown > 0 ? Math.max(0.12, legit > 0 ? Math.min(1, failedLegit / legit) : 0) : legit > 0 ? Math.min(1, failedLegit / legit) : 0;   // an expired certificate: browsers show a security warning and many visitors leave
+  const regionOut = S.regionDown > 0 && S.drLeft > 0;   // the whole region is down and visitors have nowhere else to go yet
+  const failedLegit = regionOut ? legit : failApp + failDb + failBug + qFail + payFailed;
+  const err = regionOut ? 1 : S.certDown > 0 ? Math.max(0.12, legit > 0 ? Math.min(1, failedLegit / legit) : 0) : legit > 0 ? Math.min(1, failedLegit / legit) : 0;   // an expired certificate: browsers show a security warning and many visitors leave
   const appLat = 30 / (1 - Math.min(uA, 0.965));
   const dbLat = dbUp ? 14 / (1 - Math.min(uD, 0.965)) : 0;
   const lat = {
@@ -1474,7 +1512,7 @@ function step(dt) {
   S.m = { tr, legit, bots, botsPass, staticReq, dynLegit, cdnServed, staticToApp, heavy, pay, payStuck, payQueued, payFailed,
     lb, nApp, used, health, capA, appLoad, uA, fA, bugFail, cache, hit, readsAll, reads, writes, jobWrites, jobsIn, jobsDone,
     workers, queue, reps, repCap, readsOnRep, primLoad, uD, uR, dbUp, failApp, failDb, failBug, qFail, failedLegit, err,
-    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, natDown, burn, drop, out, cdn, waf, breaker };
+    appLat, dbLat, lat, p95, burnErr, burnLat, burnBiz, quietLost, ordOk, natDown, regionOut, burn, drop, out, cdn, waf, breaker };
   coach(dt);
 
   if (!L.sandbox) {
@@ -1696,6 +1734,7 @@ const SKILLS = [
   { id: "analysis", name: "Judging a release by orders", keys: ["quiet"], level: "quiet", part: "analysis", how: "Stop a release that breaks checkout while every server looks healthy." },
   { id: "leak", name: "Spotting a memory leak", keys: ["leak"], level: "leak", how: "See that a release slowly chokes servers, and roll it back." },
   { id: "failover", name: "Database failover", keys: ["dbdown"], level: "failover", how: "Have a standby ready before the database dies." },
+  { id: "region", name: "Surviving a region outage", keys: ["regiondown"], level: "region", how: "Have a copy of the site running in a second region before the main one fails." },
   { id: "spof", name: "Finding hidden single points", keys: ["natdown", "stalepool"], level: "gameday", how: "Keep orders flowing when a zone dies, including the shared parts that lived there." },
   { id: "zones", name: "Surviving a zone outage", keys: ["azdown"], level: "zone", how: "Keep enough servers to lose half of them at once." },
   { id: "timeout", name: "Timeouts and circuit breakers", keys: ["partner"], level: "partner", how: "Stop a slow outside service from tying up your servers." },
@@ -1961,6 +2000,7 @@ const READ_MORE = {
   canary: ["Canary releases in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/canary/"],
   nat: ["NAT gateways in Amazon VPC", "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html"],
   proxy: ["Amazon RDS Proxy", "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html"],
+  region2: ["Disaster recovery options in the cloud (AWS whitepaper)", "https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html"],
   analysis: ["Analysis and progressive delivery in Argo Rollouts", "https://argo-rollouts.readthedocs.io/en/stable/features/analysis/"],
   breaker: ["Circuit breaker, by Martin Fowler", "https://martinfowler.com/bliki/CircuitBreaker.html"],
   cache: ["Caching, AWS overview", "https://aws.amazon.com/caching/"],
@@ -1978,6 +2018,7 @@ const WRONG_FIX = {
   auto: "It reacts after load rises, and each new server needs seconds to start. For a peak you know about, add servers before it.",
   canary: "Rarely wrong: on a busy site it is cheap insurance for every release.",
   nat: "Not needed when servers have public addresses or reach outside services through VPC endpoints. It also costs money per zone and per gigabyte, so count your outbound traffic.",
+  region2: "It costs money every hour for an outage that may come once a year, and it adds work: every release, setting and secret must reach both regions. For a small internal tool, backups you can restore in a few hours may be enough.",
   proxy: "Adds a small delay to every query and costs extra. A small app with short-lived connections and retries may not need it.",
   analysis: "Useless until something measures the business: first count orders (or payments, sign-ups) per version, then let the release watch that number.",
   breaker: "If the outside service is fast and reliable, a timeout that is too short fails good requests.",
@@ -2473,6 +2514,9 @@ const WORDS = [
   ["NAT gateway", "The door private servers use to call the internet (payments, email). If there is only one, it is in one zone, and losing that zone shuts the door for all."],
   ["Connection pool", "A set of open database connections an app keeps ready. Fast, but after a failover they can still point at the old database."],
   ["Single point of failure", "Anything that exists only once, so losing it takes everything down: one NAT gateway, one primary, one person who knows the password."],
+  ["Region", "A geographic area of AWS (like us-east-1 in Virginia) with several zones. Zones fail on their own; a region-wide fault takes every zone in it down together."],
+  ["RTO and RPO", "Recovery time objective: how long you may be down. Recovery point objective: how much recent data you may lose. Together they decide which disaster recovery option you need."],
+  ["Warm standby", "A smaller copy of the whole site, always running in another region with the data copied over, ready to take visitors in minutes. Pilot light is cheaper: the data is copied but servers stay off until needed."],
   ["Game day", "A planned test where you break something on purpose (switch off a zone, kill the database) to prove the system survives it."],
   ["Nines", "Availability written as a percentage. 99.9% allows about 43 minutes of failure a month, 99.99% about 4 minutes."],
   ["Canary analysis", "Comparing the new version with the old one on real numbers (orders, errors, speed) before sending it to everyone."],
@@ -2516,6 +2560,31 @@ resource "aws_route" "out" {
   route_table_id         = each.value.id
   destination_cidr_block = "0.0.0.0/0"
   nat_gateway_id         = aws_nat_gateway.per_zone[each.key].id
+}`],
+  region2: ["Terraform", `resource "aws_route53_health_check" "main" {
+  fqdn              = "app.us-east-1.example.com"
+  type              = "HTTPS"
+  resource_path     = "/health"
+  failure_threshold = 3
+}
+resource "aws_route53_record" "primary" {
+  zone_id = aws_route53_zone.site.zone_id
+  name    = "shop.example.com"
+  type    = "CNAME"
+  ttl     = 60
+  records = ["app.us-east-1.example.com"]
+  set_identifier  = "primary"
+  health_check_id = aws_route53_health_check.main.id
+  failover_routing_policy { type = "PRIMARY" }
+}
+resource "aws_route53_record" "secondary" {
+  zone_id = aws_route53_zone.site.zone_id
+  name    = "shop.example.com"
+  type    = "CNAME"
+  ttl     = 60
+  records = ["app.eu-west-1.example.com"]   # the warm standby
+  set_identifier = "secondary"
+  failover_routing_policy { type = "SECONDARY" }
 }`],
   proxy: ["Terraform", `resource "aws_db_proxy" "app" {
   name           = "app-db"
@@ -2591,6 +2660,7 @@ const LABS = {
   app: ["Free, on your laptop (kind)", ["Install kind and kubectl, then run kind create cluster.", "kubectl create deployment web --image=nginxdemos/hello --replicas=3", "kubectl get pods -o wide: three copies of the same app.", "kubectl delete pod <one of them> and watch Kubernetes start a new one at once.", "kubectl delete deployment web when you are done."]],
   auto: ["Free, on your laptop (kind)", ["Install metrics-server in your kind cluster (its README has a kind flag: --kubelet-insecure-tls).", "Create a Deployment with a CPU request, then kubectl autoscale deployment web --cpu-percent=60 --min=1 --max=5.", "Generate load with a busybox pod running a wget loop against the service.", "Watch kubectl get hpa -w: replicas rise as CPU climbs, then fall a few minutes after you stop."]],
   nat: ["Free, read-only, on any AWS account", ["Run: aws ec2 describe-nat-gateways --query 'NatGateways[].{id:NatGatewayId,subnet:SubnetId,state:State}'", "Run: aws ec2 describe-subnets to see which zone each NAT gateway's subnet is in.", "Run: aws ec2 describe-route-tables and look at the 0.0.0.0/0 route of each private route table.", "If private subnets in zone B point at a gateway in zone A, you have found a single point of failure. Nothing here creates or costs anything."]],
+  region2: ["AWS free tier, about 30 minutes, set a $5 budget alarm first", ["Create two S3 buckets in different regions (for example us-east-1 and eu-west-1) and upload an index.html to each that says which region it is.", "Create a CloudFront distribution with both buckets as origins (use Origin Access Control so the buckets stay private).", "Create an origin group: the us-east-1 bucket is primary, eu-west-1 is secondary, and fail over on 403, 404, 500, 502, 503 and 504.", "Point the default cache behaviour at the origin group, set a short cache time, and open the CloudFront address: you see the us-east-1 page.", "Delete index.html from the us-east-1 bucket, wait for the cache to expire, and reload: CloudFront now serves the eu-west-1 page. That is failover.", "Clean up the same day: disable and delete the distribution, then empty and delete both buckets."]],
   proxy: ["Free, on your laptop (Docker)", ["Start PostgreSQL and PgBouncer with docker compose; point a small script at PgBouncer that runs a query every second.", "Restart the PostgreSQL container and watch the script: PgBouncer reconnects and the script carries on after a short pause.", "Now point the script straight at PostgreSQL and restart it again: the script's open connection breaks until it reconnects.", "Clean up: docker compose down."]],
   analysis: ["Free, on your laptop (kind + Prometheus)", ["Install Argo Rollouts and the kube-prometheus-stack chart in a kind cluster.", "Make a tiny app that counts checkout_started_total and orders_saved_total, labelled with its version.", "Release it as a Rollout with a canary step at 10% and the AnalysisTemplate above.", "Release a version that returns 200 but skips saving the order. Watch the analysis fail and the rollout abort, while every Pod stays Ready.", "Clean up: kind delete cluster."]],
   canary: ["Free, on your laptop (kind)", ["Run version 1 as a Deployment behind a Service.", "Change the image tag and run kubectl rollout status deployment/web to watch the rollout.", "Break it on purpose (use an image tag that does not exist) and see pods fail.", "Fix it in one command: kubectl rollout undo deployment/web. That is a rollback.", "Next step: install Argo Rollouts and use the canary steps shown above."]],
@@ -2616,7 +2686,7 @@ const EXTRA_GUIDE = [
 ];
 /* Beginner guide: one card per part, in the order a visit travels. Everyday comparison, a concrete example,
    when to reach for it, and the shift that first teaches it. */
-const GUIDE_ORDER = ["cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
+const GUIDE_ORDER = ["region2", "cdn", "waf", "lb", "acm", "app", "auto", "canary", "analysis", "breaker", "nat", "proxy", "cache", "queue", "worker", "db", "replica", "standby"];
 const PART_GUIDE = {
   cdn: { everyday: "Local newspaper printers: copies of the same page are printed near the reader instead of shipped from head office.",
     example: "A shop's product photos and its CSS file are copied to servers in many cities. A visitor in Pune gets them from a server in Mumbai in a few milliseconds; your app never sees those requests.",
@@ -2639,6 +2709,9 @@ const PART_GUIDE = {
   nat: { everyday: "Two dining rooms need two kitchen doors: if the only door is in the room that floods, nobody gets food.",
     example: "Zone A goes down. App servers in zone B are healthy, but every payment call fails because the only NAT gateway was in zone A. With a gateway in each zone, zone B carries on.",
     use: "Whenever servers in private subnets call anything outside (payments, email, other companies' APIs) and you run in more than one zone." },
+  region2: { everyday: "A second shop on another street, already stocked, with signs ready to send customers there if your street is closed.",
+    example: "The whole of us-east-1 has a DNS fault. Route 53 health checks on the main site fail three times in a row, and the failover record sends visitors to the warm standby in eu-west-1, which scales up while it serves them.",
+    use: "When the business cannot be down for hours, or a regulator requires it. Pick the cheapest option that meets your RTO and RPO: backup and restore, pilot light, warm standby or active/active." },
   proxy: { everyday: "A switchboard operator: when the office moves, callers keep dialling the same number and the operator connects them to the new desk.",
     example: "RDS Multi-AZ fails over in about 30 seconds in real life. Apps that connect through RDS Proxy keep working; apps with their own pools keep using dead connections until they time out.",
     use: "Busy apps, Lambda functions that open many connections, and anything where a failover must be invisible." },
@@ -2735,6 +2808,8 @@ const QUIZ = [
     why: "Payment calls go out through a NAT gateway. If the only one was in zone A, zone B has no way out. Give each zone its own." },
   { q: "The database failed over in seconds, but for the next 15 seconds some queries hang and fail.", a: "proxy", opts: ["proxy", "standby", "cache"],
     why: "The app servers still hold connections to the old primary. A proxy moves them to the new one, so apps do not notice the switch." },
+  { q: "Both zones are down at once, and so is the standby database. AWS Health says the whole region has a problem.", a: "region2", opts: ["region2", "app", "standby"],
+    why: "Zones and the standby all live in the same region. Only a copy in a second region, with DNS failover, keeps the site up." },
   { q: "A release passed every test and every server is healthy, but orders fell 40% right after it went out. No page failed.", a: "analysis", opts: ["analysis", "app", "breaker"],
     why: "Healthy servers and zero errors say nothing about orders. Canary analysis compares orders on the new version with the old one and stops the rollout." },
   { q: "Each release has a 1-in-10 chance of breaking checkout, and you release every day.", a: "canary", opts: ["canary", "standby", "waf"],
@@ -3045,8 +3120,8 @@ function setup(level) {
   step(0.001); updateLive(); pushHist(); updateGuide();
 }
 /* Retry with a hint: the part that fixes what hurt most last time glows in the tray. */
-const SHIFT_BUILD = { launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
-const FIX_PART = { natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
+const SHIFT_BUILD = { region: "route53", launch: "alb", sale: "asg", bots: "waf", checkout: "sqs", viral: "cdn", deploy: "ecs", leak: "cloudwatch", failover: "rds", zone: "vpc", partner: "apigw", stampede: "cache", cert: "route53", payday: "sqs", storm: "rds", release: "cloudwatch", friday: "alb" };
+const FIX_PART = { regiondown: "region2", natdown: "nat", stalepool: "proxy", quiet: "analysis", cert: "acm", nolb: "lb", autolb: "lb", bots: "waf", deploy: "canary", leak: "canary", dbdown: "standby", azdown: "app", payfast: "breaker", partner: "breaker", static: "cdn", heavy: "queue", qnow: "queue", qbig: "worker", dbhot: "cache", apphot: "auto" };
 let retryHint = null;
 function applyRetryHint() {
   for (const c of document.querySelectorAll(".card.hintglow")) c.classList.remove("hintglow");
@@ -3214,7 +3289,9 @@ function showBrief() {
   $("#bGo").onclick = () => { closeSheet(); if (L.id === "launch" && (wantTour || !store.get("loadrush-tour-done", false))) { wantTour = false; startTour(); } else boardGuide(); };
   $("#bMenu2").onclick = showMenu;
 }
-function unlockedId(id) { const i = LEVELS.findIndex(l => l.id === id); return i === 0 || (i > 0 && unlockAll) || (i > 0 && ((stars[LEVELS[i - 1].id] || 0) > 0 || (stars[id] || 0) > 0)); }
+// A shift unlocks when the one before it is won, or, for the AWS shifts, when the shift it builds on (its "after") is won.
+const prevOf = i => (LEVELS[i].after && LEVELS.find(l => l.id === LEVELS[i].after)) || LEVELS[i - 1];
+function unlockedId(id) { const i = LEVELS.findIndex(l => l.id === id); return i === 0 || (i > 0 && unlockAll) || (i > 0 && ((stars[prevOf(i).id] || 0) > 0 || (stars[id] || 0) > 0)); }
 function skillsHtml() {
   const known = store.get("loadrush-skills", {}), n = SKILLS.filter(s => known[s.id]).length;
   const lvName = id => (LEVELS.find(l => l.id === id) || {}).name;
@@ -3234,7 +3311,7 @@ function oncallCard() {
 }
 function showMenu() {
   if (S) setRunning(false);
-  const unlocked = i => i === 0 || unlockAll || (stars[LEVELS[i - 1].id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
+  const unlocked = i => i === 0 || unlockAll || (stars[prevOf(i).id] || 0) > 0 || (stars[LEVELS[i].id] || 0) > 0;
   const g = gameFromSnapshot(store.get("loadrush-game", null));
   const showResume = g && !(S && S.t > 0.5 && !S.over && S.running === false && L === g.L);
   const nextI = (() => { for (let i = 0; i < LEVELS.length; i++) if (unlocked(i) && !stars[LEVELS[i].id]) return i; return -1; })();
@@ -3263,11 +3340,11 @@ function showMenu() {
       <button class="htab" data-tab="settings" role="tab">Settings</button>
     </div>
     <div class="hpane" data-pane="shifts">
-    ${[[0, 5, "Traffic basics", "one problem each"], [5, 13, "Releases and failures", "things that break"], [13, LEVELS.length, "Big days", "several problems at once"]].map(([from, to, title, sub]) => `
+    ${[[0, 5, "Traffic basics", "one problem each"], [5, 13, "Releases and failures", "things that break"], [13, 18, "Big days", "several problems at once"], [18, LEVELS.length, "AWS in the real world", "unlock each by winning the shift it builds on"]].map(([from, to, title, sub]) => `
       <div class="msec"><h3>${title} <small>${sub}</small></h3>
       <div class="levels">${LEVELS.slice(from, to).map((lv, k) => { const i = from + k, u = unlocked(i), st = stars[lv.id] || 0; return `
-        <button class="lv${i === nextI ? " next" : ""}" data-i="${i}" ${u ? "" : `disabled title="Win ${LEVELS[i - 1].name} first, or turn on Unlock every shift in Settings."`}>
-          <span class="n">Shift ${i + 1}${u ? "" : " · locked"}${i === nextI ? ` <em>next</em>` : ""}</span><span class="t">${lv.name}</span>
+        <button class="lv${i === nextI ? " next" : ""}" data-i="${i}" ${u ? "" : `disabled title="Win ${prevOf(i).name} first, or turn on Unlock every shift in Settings."`}>
+          <span class="n">Shift ${i + 1}${u ? "" : LEVELS[i].after ? ` · after ${prevOf(i).name}` : " · locked"}${i === nextI ? ` <em>next</em>` : ""}</span><span class="t">${lv.name}</span>
           <span class="d">${lv.blurb}</span><span class="s">${"★".repeat(st)}${"☆".repeat(3 - st)}${store.get("loadrush-cost", {})[lv.id] ? ` · $ ${store.get("loadrush-cost", {})[lv.id]}` : ""}</span>${bestOf(lv.id)}
         </button>`; }).join("")}
       </div></div>`).join("")}
