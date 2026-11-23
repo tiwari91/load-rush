@@ -394,6 +394,7 @@ details.more[open] > summary { margin-bottom: 8px; }
 .choice.right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel-2)); }
 .choice.wrong { border-color: var(--bad); }
 .choice:disabled { cursor: default; }
+.lscheck { margin: 10px 0 4px; } .lscheck .choices { margin-top: 6px; } .lswhy p { margin: 6px 0 0; }
 .why { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--ok); max-width: 66ch; }
 .why.no { border-left-color: var(--bad); }
 .ghost { position: fixed; z-index: 30; pointer-events: none; transform: translate(-50%, -50%); padding: 6px 10px; border-radius: 6px;
@@ -1793,7 +1794,9 @@ function decodeProgress(code) {
     const exp = plainObj(p.exp, v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
     const roadmap = plainObj(p.roadmap, v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
     for (const k of Object.keys(roadmap)) if (!ROADMAP.some(r => r.id === k)) delete roadmap[k];
-    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall, exp, roadmap };
+    const lessons = plainObj(p.lessons, v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
+    for (const k of Object.keys(lessons)) if (!LESSONS.some(r => r.id === k)) delete lessons[k];
+    return { stars, role: ["mid", "staff", "principal"].includes(p.role) ? p.role : "mid", teach: !!p.teach, present: !!p.present, tour: !!p.tour, skills, scores, oncall, exp, roadmap, lessons };
   } catch { return null; }
 }
 /* Hourly cost as a rough monthly figure (730 hours in a month). */
@@ -3205,6 +3208,306 @@ function showRoadmap(fromMenu, openId) {
   for (const el of document.querySelectorAll("[data-rp]")) el.onclick = () => showGuide(fromMenu, el.dataset.rp);
   $("#rmDone").onchange = e => { const d = store.get("loadrush-roadmap", {}); if (e.target.checked) d[r.id] = dayKey(); else delete d[r.id]; store.set("loadrush-roadmap", d); if (e.target.checked) toast(`Stage ${i + 1} ticked: ${r.name}.`); };
 }
+/* ================================================================== AWS lessons: one per shift. The shift is the story; the lesson is the AWS topic behind it. */
+const LESSONS = [
+  { id: "launch", topic: "Scaling out with EC2 and a load balancer", services: ["EC2", "Elastic Load Balancing (ALB)"], stage: "r3",
+    story: "One server can handle about 150 visitors a second, and traffic climbs past 300. A bigger server only buys a little time; more servers behind a load balancer keep growing with you.",
+    how: ["An EC2 instance is one virtual server. Its size (for example t3.medium or m7g.large) decides CPU and memory.", "Scaling up means a bigger instance: it needs a restart and has a ceiling. Scaling out means more instances: no ceiling and no single point of failure.", "An Application Load Balancer (ALB) receives every request and spreads it across healthy instances in a target group.", "The ALB runs a health check (for example GET /health every 30 seconds) and stops sending traffic to an instance that fails it."],
+    numbers: ["ALB health check: default interval 30 s; an instance is marked unhealthy after 2 failed checks by default.", "An ALB spans at least two Availability Zones."],
+    mistake: "Putting one large instance behind no load balancer: every restart or crash is an outage.",
+    check: [
+      { q: "Traffic doubles every month. Which approach keeps working the longest?", o: ["A bigger EC2 instance each month", "More instances behind an ALB", "A faster database"], a: 1, why: "Scaling out has no fixed ceiling and survives a single instance failing." },
+      { q: "How does an ALB know an instance is broken?", o: ["It reads the instance's CPU", "Its health check request fails", "The instance sends an email"], a: 1, why: "The ALB calls a health check path on each target and stops routing to targets that fail it." },
+      { q: "What is the minimum number of Availability Zones for an ALB?", o: ["One", "Two", "Three"], a: 1, why: "An ALB must be enabled in at least two Availability Zones." } ],
+    ask: "Walk me through what happens between a user typing your URL and an EC2 instance answering.",
+    docs: [["What is an Application Load Balancer?", "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html"], ["Target group health checks", "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html"]] },
+  { id: "sale", topic: "Auto Scaling and read caching", services: ["EC2 Auto Scaling", "ElastiCache", "RDS read replicas"], stage: "r6",
+    story: "A flash sale sends 700 visitors a second, mostly reading the same product pages. The app servers and the database both run hot.",
+    how: ["An Auto Scaling group (ASG) keeps a number of instances between a minimum and a maximum, replacing any that fail.", "A target tracking policy (for example: keep average CPU at 50%) adds instances when load rises and removes them when it falls.", "A cache such as ElastiCache (Redis or Valkey) keeps answers to repeated reads in memory, so the database is asked once instead of thousands of times.", "Read replicas are extra copies of an RDS database for reads. Replication is asynchronous, so a replica can be slightly behind."],
+    numbers: ["New instances need time to boot and warm up (often 1 to 5 minutes): scale before the peak, or use scheduled scaling for known sale times.", "A cache hit is usually under a millisecond; a database query is often 5 to 50 ms."],
+    mistake: "Relying only on autoscaling for a spike that arrives in seconds: new instances arrive after the damage. Schedule capacity for planned events.",
+    check: [
+      { q: "A sale starts at exactly 10:00. What is the safest scaling plan?", o: ["Target tracking only", "Scheduled scaling before 10:00 plus target tracking", "Turn off autoscaling during the sale"], a: 1, why: "Scheduled scaling has capacity ready at the start; target tracking handles what you did not predict." },
+      { q: "Product pages read the same rows again and again. What takes the most load off the database?", o: ["A cache in front of it", "A bigger load balancer", "More app servers"], a: 0, why: "Repeated reads are answered from memory, so the database barely sees them." },
+      { q: "A user updates their cart and a read replica still shows the old cart for a moment. Why?", o: ["Replicas are read-only", "Replication to replicas is asynchronous", "The cache is broken"], a: 1, why: "Read replicas lag slightly behind the primary; read your own writes from the primary." } ],
+    ask: "How would you prepare an AWS setup for a sale that starts at a known time?",
+    docs: [["Target tracking scaling policies", "https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scaling-target-tracking.html"], ["Scheduled scaling", "https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-scheduled-scaling.html"], ["Caching strategies for ElastiCache", "https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html"]] },
+  { id: "bots", topic: "Blocking bots at the edge with AWS WAF", services: ["AWS WAF", "CloudFront", "Shield"], stage: "r9",
+    story: "Traffic jumps 8 times but sales do not: bots are scraping and hammering the site. Adding servers just pays to serve the bots.",
+    how: ["AWS WAF is a web firewall you attach to CloudFront, an ALB or API Gateway. It checks each request against rules before it reaches your servers.", "A rate-based rule counts requests per IP address (or another key) over a time window and blocks or challenges anyone above the limit.", "Managed rule groups (for example the Bot Control and the common rule set) block known bad bots and attack patterns without you writing rules.", "AWS Shield Standard protects every AWS customer against common network floods at no extra cost."],
+    numbers: ["Rate-based rules look at a window of 1, 2, 5 or 10 minutes.", "Blocking at CloudFront stops a request at the nearest edge location, before it costs you app server time."],
+    mistake: "Scaling out to absorb bot traffic: it raises the bill and the bots keep coming.",
+    check: [
+      { q: "Where is the cheapest place to stop a bot flood?", o: ["In the app code", "At the edge with WAF", "In the database"], a: 1, why: "The earlier a request is dropped, the less it costs; WAF at the edge drops it before your servers." },
+      { q: "What does a WAF rate-based rule count?", o: ["Requests per key (such as IP) over a time window", "CPU per server", "Orders per minute"], a: 0, why: "It counts requests from each key and acts when a key goes over the limit." },
+      { q: "A whole office shares one IP address. What is the risk of a very low per-IP limit?", o: ["None", "Blocking many real users at once", "Higher database cost"], a: 1, why: "Many people behind one address look like one heavy client; tune limits or use other keys." } ],
+    ask: "Traffic is 8x normal but orders are flat. How do you find out what is happening and stop it?",
+    docs: [["Rate-based rule statement", "https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html"], ["AWS WAF Bot Control", "https://docs.aws.amazon.com/waf/latest/developerguide/waf-bot-control.html"]] },
+  { id: "checkout", topic: "Queues and workers with Amazon SQS", services: ["SQS", "Lambda or ECS workers"], stage: "r7",
+    story: "Every checkout does slow work (emails, invoices, stock updates) while the shopper waits. Pages get slow and servers fill up.",
+    how: ["Put slow work on an SQS queue and reply to the shopper at once; workers take messages off the queue and do the work in the background.", "When a worker receives a message it becomes invisible for the visibility timeout. If the worker finishes, it deletes the message; if it crashes, the message comes back.", "A dead-letter queue (DLQ) catches messages that keep failing, so one bad message cannot block the rest.", "Scale workers on queue depth (ApproximateNumberOfMessagesVisible) or the age of the oldest message."],
+    numbers: ["Default visibility timeout 30 s (up to 12 hours). Default retention 4 days (up to 14).", "Standard queues deliver at least once, so a message can arrive twice: make the work idempotent (safe to repeat)."],
+    mistake: "Doing work that can be repeated (like charging a card) without an idempotency key, then charging twice when a message is delivered twice.",
+    check: [
+      { q: "A worker crashes halfway through a message. What happens?", o: ["The message is lost", "It becomes visible again after the visibility timeout", "SQS retries it at once on the same worker"], a: 1, why: "Messages are only removed when a worker deletes them; otherwise they reappear." },
+      { q: "One message fails every time. What stops it blocking the queue for ever?", o: ["A dead-letter queue with a max receive count", "A bigger visibility timeout", "A FIFO queue"], a: 0, why: "After the max receive count, SQS moves it to the DLQ for a human to look at." },
+      { q: "Which number should drive how many workers you run?", o: ["CPU of the web servers", "Messages waiting or the oldest message's age", "Number of shoppers logged in"], a: 1, why: "Queue depth and age show directly whether workers are keeping up." } ],
+    ask: "Design order processing so a slow email provider never slows down checkout.",
+    docs: [["SQS visibility timeout", "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html"], ["SQS dead-letter queues", "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html"]] },
+  { id: "viral", topic: "Serving files from CloudFront and S3", services: ["CloudFront", "S3"], stage: "r5",
+    story: "A video on the home page is shared everywhere. Most of the load is the same images and video files, and the app servers are busy sending files instead of pages.",
+    how: ["Store images, CSS, scripts and video in an S3 bucket.", "Put CloudFront in front: it keeps copies at hundreds of edge locations near users, so most requests never reach your origin.", "Use Origin Access Control so only CloudFront can read the bucket; the bucket stays private.", "Cache-Control headers and cache policies decide how long the edge keeps a file. Put a version in file names (app.3f2a.js) so a new release does not need an invalidation."],
+    numbers: ["A good static site reaches a cache hit ratio above 90%.", "Data out of CloudFront is usually cheaper than data out of EC2 directly, and the first 1 TB a month is free."],
+    mistake: "Serving big files from the app servers, then adding servers to keep up.",
+    check: [
+      { q: "Who should be able to read the S3 bucket behind CloudFront?", o: ["Everyone", "Only CloudFront, through Origin Access Control", "Only the app servers"], a: 1, why: "A private bucket reached only through CloudFront cannot be scraped directly." },
+      { q: "You release a new app.js. How do users get it without waiting for the cache to expire?", o: ["Put a version or hash in the file name", "Restart CloudFront", "Delete the bucket"], a: 0, why: "A new name is a new cache key, so the edge fetches it fresh." },
+      { q: "What does a high cache hit ratio mean?", o: ["Most requests are answered at the edge", "The origin is overloaded", "Users see old files"], a: 0, why: "Hits are served from the edge, so the origin does less work." } ],
+    ask: "Your images are 70% of traffic. What do you change, and how do you check it worked?",
+    docs: [["CloudFront with an S3 origin (Origin Access Control)", "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html"], ["Increase the cache hit ratio", "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cache-hit-ratio.html"]] },
+  { id: "deploy", topic: "Safe releases: canary and automatic rollback", services: ["CodeDeploy", "ECS", "CloudWatch alarms"], stage: "r8",
+    story: "A Friday release breaks pages, twice. Sending a new version to every server at once means every user sees the bug.",
+    how: ["A canary release sends a small share of traffic (for example 10%) to the new version first, then the rest if it looks healthy.", "CodeDeploy has ready-made canary and linear configurations for ECS and Lambda, and can roll back automatically when a CloudWatch alarm fires.", "ECS rolling deployments have a deployment circuit breaker that stops and rolls back a release whose tasks keep failing.", "Blue/green keeps the old version running beside the new one, so rollback is a traffic switch, not a redeploy."],
+    numbers: ["Example CodeDeploy configuration: Canary10Percent5Minutes sends 10% for 5 minutes, then 100%.", "Rollback with blue/green takes seconds because the old version is still running."],
+    mistake: "Releasing to everything at once with no alarm tied to the deployment, so rollback waits for a human to notice.",
+    check: [
+      { q: "What does a canary release limit?", o: ["How many users see a bad version", "The size of the release", "Server cost"], a: 0, why: "Only the canary share sees the new version until it proves itself." },
+      { q: "How can CodeDeploy roll back without a human?", o: ["It cannot", "When a CloudWatch alarm linked to the deployment goes off", "When the release is older than a day"], a: 1, why: "Linking alarms to the deployment lets it roll back automatically." },
+      { q: "Why is blue/green rollback fast?", o: ["The old version is still running", "It skips tests", "It uses Spot"], a: 0, why: "Rolling back is just moving traffic back to the old, still-running copy." } ],
+    ask: "How would you release a risky change to production with the least harm to users?",
+    docs: [["CodeDeploy deployment configurations", "https://docs.aws.amazon.com/codedeploy/latest/userguide/deployment-configurations.html"], ["ECS deployment circuit breaker", "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html"]] },
+  { id: "leak", topic: "Monitoring memory with CloudWatch", services: ["CloudWatch", "CloudWatch agent", "Container Insights"], stage: "r9",
+    story: "A release leaks memory: servers slowly choke and restart. Nothing alerts until users feel it.",
+    how: ["EC2 sends CPU, network and disk metrics to CloudWatch by default, but not memory: you need the CloudWatch agent for memory used.", "For ECS and EKS, Container Insights collects memory and CPU per container.", "A CloudWatch alarm on memory (or on restarts) can page you or trigger a rollback.", "Compare a metric before and after a release: a line that climbs steadily after a deploy points at the release."],
+    numbers: ["Basic EC2 monitoring sends metrics every 5 minutes; detailed monitoring every 1 minute.", "A leak shows as a saw-tooth: memory climbs, the process restarts, memory climbs again."],
+    mistake: "Assuming CloudWatch shows EC2 memory out of the box, and finding out during the incident that it does not.",
+    check: [
+      { q: "Which EC2 metric needs the CloudWatch agent?", o: ["CPU utilisation", "Memory used", "Network in"], a: 1, why: "Memory is inside the operating system, so an agent must report it." },
+      { q: "Memory climbs for an hour, the task restarts, then it climbs again. What is it?", o: ["A traffic spike", "A memory leak", "A slow database"], a: 1, why: "A steady climb and reset is the classic leak pattern." },
+      { q: "What is the quickest fix while you look for the bug?", o: ["Roll back to the previous version", "Add more memory", "Turn off alarms"], a: 0, why: "Rolling back stops the harm now; the root cause can be found later." } ],
+    ask: "Servers restart every few hours since Tuesday's release. How do you investigate?",
+    docs: [["Collect metrics with the CloudWatch agent", "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html"], ["Container Insights", "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ContainerInsights.html"]] },
+  { id: "failover", topic: "RDS Multi-AZ: a standby database", services: ["RDS Multi-AZ", "Aurora"], stage: "r4",
+    story: "The database disk is failing. With only one database, its death is the site's death.",
+    how: ["RDS Multi-AZ keeps a standby copy in another Availability Zone, updated synchronously, so no committed data is lost.", "If the primary fails, RDS promotes the standby and points the same DNS endpoint at it; the app reconnects.", "The standby of a Multi-AZ DB instance does not serve reads; it is only for failover. Read replicas are separate.", "Aurora keeps six copies of data across three zones and fails over to a replica, usually faster."],
+    numbers: ["Multi-AZ DB instance failover usually takes 60 to 120 seconds.", "Your app must reconnect and not cache the old IP address: always use the endpoint name."],
+    mistake: "Thinking a read replica is a backup plan for failover without testing promotion, or connecting by IP address instead of the endpoint.",
+    check: [
+      { q: "How is the Multi-AZ standby kept up to date?", o: ["Synchronous replication", "Nightly backup", "Asynchronous replication"], a: 0, why: "Every committed write reaches the standby, so failover loses no committed data." },
+      { q: "After failover, how does the app find the new primary?", o: ["You change the code", "The same DNS endpoint now points to the standby", "It does not"], a: 1, why: "RDS moves the endpoint; apps that reconnect by name just work." },
+      { q: "Can you send read traffic to a Multi-AZ DB instance standby?", o: ["Yes", "No, it is only for failover", "Only at night"], a: 1, why: "Use read replicas (or a Multi-AZ DB cluster) for reads." } ],
+    ask: "What happens, step by step, when the primary RDS database fails at 3 a.m.?",
+    docs: [["Multi-AZ DB instance deployments", "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html"], ["Aurora high availability", "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraHighAvailability.html"]] },
+  { id: "zone", topic: "Availability Zones and spreading capacity", services: ["Availability Zones", "Auto Scaling", "ALB"], stage: "r6",
+    story: "Zone A loses power and half the servers vanish. The rest must carry everything.",
+    how: ["A Region has several Availability Zones (AZs): separate data centres with their own power and network, close enough for fast links.", "Spread an Auto Scaling group across subnets in at least two AZs; the ALB sends traffic only to healthy targets.", "Plan for one zone to be lost: with two zones, each must be able to carry the full load (or the ASG must replace capacity quickly).", "Static stability: the setup keeps working without needing to make changes during the outage, because capacity is already there."],
+    numbers: ["With 2 zones at 60% load each, losing one puts the other at 120%: too much. Run each below 50%, or use 3 zones.", "Replacing capacity during a zone outage can be slow because everyone is launching instances at once."],
+    mistake: "Running each zone near full, so losing one zone overloads the other.",
+    check: [
+      { q: "What is an Availability Zone?", o: ["A country", "One or more separate data centres in a Region", "A single server rack"], a: 1, why: "AZs are isolated from each other so one can fail alone." },
+      { q: "Two zones, each at 70% busy. Zone A dies. What happens?", o: ["Zone B is at 140%: overloaded", "Nothing", "Zone B is at 70%"], a: 0, why: "All of A's load moves to B. Plan spare capacity per zone." },
+      { q: "What does static stability mean?", o: ["Servers never change", "The system survives a failure without needing to launch or change anything", "No releases on Fridays"], a: 1, why: "Spare capacity is already running, so recovery does not depend on the failing systems." } ],
+    ask: "How much capacity would you run in each zone, and why?",
+    docs: [["Regions and Availability Zones", "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html"], ["Static stability using Availability Zones", "https://aws.amazon.com/builders-library/static-stability-using-availability-zones/"]] },
+  { id: "partner", topic: "Timeouts and circuit breakers", services: ["API Gateway", "Lambda", "AWS SDK"], stage: "r7",
+    story: "An outside payment API gets very slow. Every request waiting on it holds a server thread, and soon the whole site is stuck waiting.",
+    how: ["Every call to another service needs a timeout shorter than the user's patience, set in the HTTP client or AWS SDK.", "A circuit breaker counts failures; after too many, it stops calling for a while and fails fast or uses a fallback (for example: 'payment pending, we will email you').", "API Gateway and Lambda have their own time limits, so a slow backend fails cleanly instead of hanging.", "Keep slow outside calls off the request path where you can, through a queue."],
+    numbers: ["API Gateway REST APIs time out integrations at 29 s by default.", "Lambda functions can run for up to 15 minutes, but a user-facing call should be cut much sooner."],
+    mistake: "No timeout at all (many HTTP clients wait for ever by default), so one slow partner takes the whole site down.",
+    check: [
+      { q: "Why does a slow partner take down your own site?", o: ["Waiting requests hold your servers' threads and connections", "It deletes your data", "It changes your DNS"], a: 0, why: "Each stuck request uses up capacity until nothing is left for others." },
+      { q: "What does an open circuit breaker do?", o: ["Calls the partner more often", "Fails fast or uses a fallback without calling", "Restarts the servers"], a: 1, why: "It stops waiting on a service that is known to be failing." },
+      { q: "What is the default integration timeout for API Gateway REST APIs?", o: ["3 s", "29 s", "15 minutes"], a: 1, why: "29 seconds by default; set your own client timeouts lower for user-facing calls." } ],
+    ask: "A partner API you depend on is slow 1% of the time. How do you protect your users?",
+    docs: [["Timeouts, retries and backoff with jitter (Builders' Library)", "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/"], ["API Gateway quotas", "https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html"]] },
+  { id: "stampede", topic: "Cold caches and cache stampedes", services: ["ElastiCache", "RDS"], stage: "r5",
+    story: "The cache restarts and comes back empty. Every request misses and goes to the database at the same moment.",
+    how: ["Cache-aside: the app asks the cache first, and on a miss reads the database and stores the answer.", "When many requests miss the same key at once, they all hit the database: a stampede.", "Use replicas and Multi-AZ in ElastiCache so a node failure promotes a warm replica instead of an empty cache.", "Add jitter to TTLs so keys do not all expire together, and let only one request rebuild a hot key (a lock or request coalescing)."],
+    numbers: ["A cache that took 95% of reads means the database sees 20x its normal read load when the cache is empty.", "ElastiCache Multi-AZ promotes a replica automatically when the primary node fails."],
+    mistake: "Sizing the database for normal days only, assuming the cache is always warm.",
+    check: [
+      { q: "The cache served 95% of reads and comes back empty. Database reads become about?", o: ["The same", "2x", "20x"], a: 2, why: "From 5% of reads to 100%: twenty times as many." },
+      { q: "Which helps most when a cache node fails?", o: ["A replica that is promoted, already warm", "A longer TTL", "A bigger database disk"], a: 0, why: "A warm replica keeps the data, so the database is not flooded." },
+      { q: "Why add random jitter to TTLs?", o: ["To save memory", "So keys do not all expire at the same moment", "To make reads faster"], a: 1, why: "Spreading expiry spreads the database refills over time." } ],
+    ask: "Your Redis cache was flushed by mistake at peak. What happens, and how would you have prevented the damage?",
+    docs: [["Caching strategies (lazy loading, TTL)", "https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html"], ["ElastiCache Multi-AZ", "https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/AutoFailover.html"]] },
+  { id: "cert", topic: "HTTPS certificates with ACM", services: ["Certificate Manager (ACM)", "Route 53", "ALB / CloudFront"], stage: "r9",
+    story: "The HTTPS certificate expires and browsers block the site. Nobody remembered how it was renewed last year.",
+    how: ["AWS Certificate Manager (ACM) issues public certificates for free when used with ALB, CloudFront or API Gateway.", "With DNS validation, you add a CNAME record once; as long as it stays, ACM renews the certificate automatically.", "ACM starts trying to renew managed certificates 60 days before they expire.", "Imported certificates (bought elsewhere) are never renewed by ACM: alarm on their expiry date."],
+    numbers: ["AWS Health and EventBridge send expiry warnings, starting 45 days before for certificates ACM cannot renew.", "The AWS Config rule acm-certificate-expiration-check flags certificates close to expiry."],
+    mistake: "Deleting the DNS validation record during a cleanup, which silently stops automatic renewal.",
+    check: [
+      { q: "What lets ACM renew a certificate by itself?", o: ["Email validation", "A DNS validation CNAME that stays in place", "Restarting the ALB"], a: 1, why: "ACM rechecks the CNAME at renewal time and renews without you." },
+      { q: "Which certificates does ACM never renew for you?", o: ["Imported ones", "DNS-validated ones", "Ones on CloudFront"], a: 0, why: "Imported certificates must be replaced by you before expiry." },
+      { q: "When does ACM start trying to renew?", o: ["On the expiry day", "60 days before expiry", "One year before"], a: 1, why: "It starts 60 days early, which leaves time to fix validation problems." } ],
+    ask: "How do you make sure a certificate expiry can never take your site down again?",
+    docs: [["ACM managed renewal", "https://docs.aws.amazon.com/acm/latest/userguide/managed-renewal.html"], ["DNS validation", "https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html"]] },
+  { id: "quiet", topic: "Business metrics and synthetic checks", services: ["CloudWatch custom metrics", "CloudWatch Synthetics", "CodeDeploy"], stage: "r9",
+    story: "Every check passes and every server is healthy, but checkout is broken. Health checks only prove the server answers, not that people can buy.",
+    how: ["Publish business metrics to CloudWatch (orders per minute, payment success rate) with PutMetricData or embedded metric format logs.", "CloudWatch anomaly detection learns the normal pattern of a metric and alarms when it leaves the band.", "CloudWatch Synthetics canaries are scripts that run a real user journey (log in, add to cart, pay on a test card) every few minutes.", "Tie the orders alarm to the deployment so a release that drops orders rolls back by itself."],
+    numbers: ["A health check returning 200 says nothing about checkout: watch the outcome users care about.", "Synthetics canaries can run as often as every minute."],
+    mistake: "Treating green servers and passing health checks as proof that the product works.",
+    check: [
+      { q: "All health checks are green but orders dropped to zero. What should have alerted you?", o: ["CPU alarm", "An alarm on orders per minute", "Disk alarm"], a: 1, why: "Only a business metric shows that customers cannot buy." },
+      { q: "What does a CloudWatch Synthetics canary do?", o: ["Runs a scripted user journey on a schedule", "Releases 10% of traffic", "Blocks bots"], a: 0, why: "It acts like a user and fails when the journey fails." },
+      { q: "Why use anomaly detection for orders?", o: ["Orders vary by hour and day, so a fixed threshold is wrong part of the day", "It is free", "It replaces logs"], a: 0, why: "A learned band follows the daily pattern; a fixed line does not." } ],
+    ask: "What are the three most important alarms for an online shop, and why those?",
+    docs: [["CloudWatch Synthetics canaries", "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Synthetics_Canaries.html"], ["CloudWatch anomaly detection", "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Anomaly_Detection.html"]] },
+  { id: "payday", topic: "Reliable payments: queues, idempotency and limits", services: ["SQS", "Step Functions", "API Gateway"], stage: "r7",
+    story: "Salary day: payments pile up, then the payment network slows. Retrying by hand risks charging people twice.",
+    how: ["Accept the payment request, put it on a queue, and tell the user it is processing; workers call the payment network at a pace it can handle.", "An idempotency key (one per payment) lets you retry safely: the second attempt is recognised and not charged again.", "Step Functions can run a payment workflow with built-in retries, timeouts and a catch step for failures.", "API Gateway usage plans and throttling protect your own API from bursts."],
+    numbers: ["Throttle to what the slowest dependency can take, not to what your servers can take.", "SQS standard queues can deliver a message more than once, so idempotency is required, not optional."],
+    mistake: "Retrying payment calls without an idempotency key.",
+    check: [
+      { q: "What makes retrying a payment safe?", o: ["A faster network", "An idempotency key per payment", "A bigger queue"], a: 1, why: "The payment provider recognises the key and does not charge twice." },
+      { q: "The payment network slows down. What protects your site?", o: ["Queue payments and process at a controlled rate", "Call it more often", "Turn off timeouts"], a: 0, why: "The queue absorbs the backlog while workers keep a safe pace." },
+      { q: "Which service runs a multi-step workflow with retries and error handling built in?", o: ["Step Functions", "CloudFront", "Route 53"], a: 0, why: "Step Functions has Retry and Catch for each step." } ],
+    ask: "Design salary-day payment processing that never double-charges and survives the bank slowing down.",
+    docs: [["Making retries safe with idempotent APIs (Builders' Library)", "https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/"], ["Step Functions error handling", "https://docs.aws.amazon.com/step-functions/latest/dg/concepts-error-handling.html"]] },
+  { id: "storm", topic: "Layered failures and runbooks", services: ["AWS Health Dashboard", "RDS Multi-AZ", "Auto Scaling"], stage: "r6",
+    story: "A zone goes down, then the database dies. Each failure alone is survivable; together they test every layer.",
+    how: ["Design each layer to survive alone: app servers across zones, a standby database, a cache with replicas.", "The AWS Health Dashboard shows AWS events affecting your account, such as a zone problem or scheduled maintenance.", "Write runbooks: short, tested steps for each failure (who does what, which button, how to confirm).", "During an incident, fix the thing hurting users most first, then the next."],
+    numbers: ["Two independent failures at once are rare, but storms often cause them together: power and network share causes.", "Time to recover is mostly time to notice and decide; runbooks cut both."],
+    mistake: "Testing each failure alone, never two together.",
+    check: [
+      { q: "Where do you see AWS problems that affect your own resources?", o: ["AWS Health Dashboard", "Billing console", "S3"], a: 0, why: "It lists events for the services and Regions you use." },
+      { q: "Zone A is down and the database just failed over. What comes first?", o: ["Whatever is hurting users most right now", "Writing the incident report", "Upgrading the database"], a: 0, why: "Stop the user harm first; analysis comes after." },
+      { q: "What is a runbook?", o: ["A load test", "Short tested steps for handling a known failure", "A billing report"], a: 1, why: "It turns a stressful decision into a checklist." } ],
+    ask: "Tell me about the worst incident you handled. What was the first thing you did, and why?",
+    docs: [["AWS Health Dashboard", "https://docs.aws.amazon.com/health/latest/ug/aws-health-dashboard-status.html"], ["Reliability pillar (Well-Architected)", "https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html"]] },
+  { id: "gameday", topic: "Hidden single points: NAT gateways, connections and game days", services: ["NAT gateway", "RDS Proxy", "Fault Injection Service"], stage: "r10",
+    story: "Zone A is switched off on purpose. Zone B is healthy, yet payments and database connections still depended on zone A.",
+    how: ["A NAT gateway lives in one zone. If private subnets in zone B route through a NAT gateway in zone A, they lose the internet when A fails. Use one NAT gateway per zone.", "RDS Proxy pools database connections and holds them through a failover, so apps do not pile up stale connections.", "AWS Fault Injection Service (FIS) runs planned experiments, including an AZ power interruption scenario, to find these links before a real outage.", "A game day is a planned exercise: break something on purpose, watch, fix, and write down what you learned."],
+    numbers: ["A NAT gateway costs money per hour per zone; one per zone is the price of zone independence.", "Start game days in a test account, then in production with a stop condition (an alarm that ends the experiment)."],
+    mistake: "One NAT gateway shared by all zones to save money.",
+    check: [
+      { q: "Private servers in zone B lose the internet when zone A fails. Likely cause?", o: ["They route through a NAT gateway in zone A", "Security groups", "Their EBS volumes"], a: 0, why: "NAT gateways are zonal; give each zone its own." },
+      { q: "What does RDS Proxy help with during a failover?", o: ["It keeps and reuses connections so apps reconnect smoothly", "It makes the database bigger", "It blocks bots"], a: 0, why: "Apps talk to the proxy, which handles the switch to the new primary." },
+      { q: "Which AWS service runs planned failure experiments?", o: ["Fault Injection Service", "CloudTrail", "Cost Explorer"], a: 0, why: "FIS injects faults like stopping instances or a zone power interruption." } ],
+    ask: "How would you prove your system survives losing a whole Availability Zone?",
+    docs: [["NAT gateways", "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html"], ["AWS FIS scenarios (AZ power interruption)", "https://docs.aws.amazon.com/fis/latest/userguide/az-availability-scenario.html"], ["RDS Proxy", "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html"]] },
+  { id: "release", topic: "Roll back first, then fix", services: ["CodeDeploy", "AppConfig", "AWS WAF"], stage: "r8",
+    story: "A leaky release, then a bot wave, then a rushed hotfix. Two problems at once, and pressure to fix forward.",
+    how: ["When a release coincides with trouble, roll back first: it is the fastest way to remove one suspect.", "Feature flags (AWS AppConfig) let you turn a new feature off without a redeploy.", "Handle the bot wave separately at the edge with WAF, so it does not hide whether the rollback worked.", "Hotfixes go through the same canary and alarms as any release; skipping them under pressure is how a second outage starts."],
+    numbers: ["A rollback is usually minutes; a hotfix is write, review, build, test, release: often an hour or more.", "AppConfig can roll out a flag change gradually and roll it back on an alarm."],
+    mistake: "Fixing forward under pressure while users are still hurting, and skipping the canary for the hotfix.",
+    check: [
+      { q: "Errors started right after a release. First move?", o: ["Roll back", "Write a hotfix", "Add servers"], a: 0, why: "Rollback removes the likely cause in minutes." },
+      { q: "How do you turn off a new feature without a deployment?", o: ["A feature flag in AppConfig", "Delete the database", "Restart CloudFront"], a: 0, why: "Flags change behaviour at run time." },
+      { q: "Should a hotfix skip the canary because it is urgent?", o: ["Yes", "No, use the same safety steps", "Only on weekends"], a: 1, why: "Rushed changes are the most likely to be wrong." } ],
+    ask: "A release and a traffic spike happen at the same time. How do you tell which one is causing the errors?",
+    docs: [["AWS AppConfig feature flags", "https://docs.aws.amazon.com/appconfig/latest/userguide/appconfig-creating-configuration-and-profile-feature-flags.html"], ["CodeDeploy automatic rollback", "https://docs.aws.amazon.com/codedeploy/latest/userguide/deployments-rollback-and-redeploy.html"]] },
+  { id: "friday", topic: "Peak day planning: load tests, quotas and capacity", services: ["Service Quotas", "Distributed Load Testing on AWS", "Auto Scaling"], stage: "r10",
+    story: "Black Friday: everything at once. The setup has to be solid before the doors open.",
+    how: ["Load test before the day at the traffic you expect, plus a margin. AWS has a ready solution, Distributed Load Testing on AWS.", "Check Service Quotas (for example running On-Demand vCPUs, ALB targets, Lambda concurrency) and request increases weeks ahead.", "Set the ASG minimum high for the day, warm caches, and freeze risky releases.", "Have runbooks, an on-call rota and a status page ready."],
+    numbers: ["Quota increases can take days: ask early.", "Plan for about 2x your forecast peak; forecasts are usually low."],
+    mistake: "Finding a service quota limit in the middle of the peak, when the ASG cannot launch more instances.",
+    check: [
+      { q: "The ASG cannot launch more instances during the peak. A likely cause?", o: ["A service quota such as On-Demand vCPUs", "Too many alarms", "CloudFront caching"], a: 0, why: "Quotas cap what you can launch; raise them before the day." },
+      { q: "What should you do with risky releases near the peak?", o: ["Freeze them", "Release more", "Skip tests"], a: 0, why: "Fewer changes means fewer surprises on the biggest day." },
+      { q: "How do you know the setup can take the peak?", o: ["Load test it beforehand", "Trust the dashboards", "Wait and see"], a: 0, why: "Only a test at peak load shows the real limits." } ],
+    ask: "You have four weeks before Black Friday. What is your plan?",
+    docs: [["Service Quotas", "https://docs.aws.amazon.com/servicequotas/latest/userguide/intro.html"], ["Distributed Load Testing on AWS", "https://aws.amazon.com/solutions/implementations/distributed-load-testing-on-aws/"]] },
+  { id: "spot", topic: "Using EC2 Spot safely", services: ["EC2 Spot", "Auto Scaling mixed instances", "EventBridge"], stage: "r3",
+    story: "Four of six servers are Spot: cheap, but AWS takes them back together with a two-minute warning.",
+    how: ["Spot Instances use spare EC2 capacity at a large discount, and AWS can reclaim them with a 2-minute interruption notice.", "A rebalance recommendation can arrive earlier, when an instance is at higher risk; Capacity Rebalancing lets the ASG start a replacement before the old one goes.", "Use a mixed instances policy: an On-Demand base, several instance types and families, and the price-capacity-optimized allocation strategy.", "Stateless apps that drain connections on the notice handle reclaims well."],
+    numbers: ["Spot can be up to 90% cheaper than On-Demand.", "Interruption notice: 2 minutes, readable from instance metadata or as an EventBridge event."],
+    mistake: "All Spot servers of one instance type in one zone: they are reclaimed together.",
+    check: [
+      { q: "How much warning does AWS give before reclaiming a Spot Instance?", o: ["10 seconds", "2 minutes", "1 hour"], a: 1, why: "The interruption notice comes 2 minutes ahead." },
+      { q: "What lowers the chance of losing all Spot servers at once?", o: ["Many instance types and zones", "One big instance type", "A bigger EBS volume"], a: 0, why: "Different capacity pools are rarely reclaimed together." },
+      { q: "What does Capacity Rebalancing do?", o: ["Starts a replacement when a rebalance recommendation arrives", "Moves data between zones", "Raises Spot prices"], a: 0, why: "The new instance starts before the old one is taken." } ],
+    ask: "How would you cut EC2 cost by half without risking an outage?",
+    docs: [["Spot interruption notices", "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html"], ["Capacity Rebalancing", "https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-capacity-rebalancing.html"], ["Allocation strategies for Spot", "https://docs.aws.amazon.com/autoscaling/ec2/userguide/allocation-strategies.html"]] },
+  { id: "retry", topic: "Retries, backoff and jitter", services: ["AWS SDK retry modes", "SQS", "API Gateway throttling"], stage: "r7",
+    story: "The database stalls for 3 seconds. Phone apps all retry at once, and the retry flood keeps the site down long after the database recovers.",
+    how: ["Retrying immediately multiplies load at the worst moment. Wait longer after each failure (exponential backoff) and add randomness (jitter) so clients do not retry in step.", "AWS SDKs do this for you: the standard retry mode uses exponential backoff with jitter and a retry quota that stops retrying when many calls are failing.", "Retry at one layer only; retries at every layer multiply (3 x 3 x 3 = 27 calls).", "Server side, throttle and shed load so a recovering service is not flooded."],
+    numbers: ["SDK standard mode: up to 3 attempts by default, with backoff capped at 20 seconds.", "Full jitter: wait a random time between 0 and the backoff value."],
+    mistake: "Every layer retrying 3 times with no backoff.",
+    check: [
+      { q: "Why add jitter to backoff?", o: ["So clients do not all retry at the same instant", "To make retries faster", "To use less memory"], a: 0, why: "Randomness spreads retries out over time." },
+      { q: "Three layers each retry 3 times. One user request can become how many calls to the bottom layer?", o: ["3", "9", "27"], a: 2, why: "Retries multiply: 3 x 3 x 3." },
+      { q: "What does the SDK retry quota do?", o: ["Stops retrying when too many calls are failing", "Limits users per day", "Sets the timeout"], a: 0, why: "It prevents clients from adding load to a service that is already failing." } ],
+    ask: "Explain how a 3-second outage can turn into a 30-minute one, and how you would prevent it.",
+    docs: [["Retry behavior in AWS SDKs", "https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html"], ["Exponential backoff and jitter (AWS Architecture Blog)", "https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/"]] },
+  { id: "region", topic: "Disaster recovery across Regions", services: ["Route 53 failover", "Aurora Global Database", "DynamoDB global tables"], stage: "r10",
+    story: "The whole AWS Region fails. Two zones and a standby database do not help when every zone in the Region is affected.",
+    how: ["Pick a DR strategy by how fast you must recover (RTO) and how much data you can lose (RPO): backup and restore, pilot light, warm standby, or multi-site active/active.", "Route 53 failover routing sends users to the second Region when health checks on the first fail.", "Aurora Global Database and DynamoDB global tables copy data to other Regions within about a second.", "Practise the switch: a failover nobody has tried usually fails. Avoid needing the failed Region's control plane to fail over."],
+    numbers: ["Backup and restore: hours. Pilot light: tens of minutes. Warm standby: minutes. Active/active: near zero.", "Aurora Global Database cross-Region replication lag is typically under 1 second."],
+    mistake: "Planning a failover that depends on making changes in the Region that is down.",
+    check: [
+      { q: "What do RTO and RPO measure?", o: ["Time to recover, and how much data you can lose", "Cost and speed", "Users and orders"], a: 0, why: "RTO is downtime allowed; RPO is the data loss allowed." },
+      { q: "Which DR strategy keeps a scaled-down copy running in a second Region?", o: ["Backup and restore", "Warm standby", "No DR"], a: 1, why: "Warm standby is running at small size and scales up on failover." },
+      { q: "Which Route 53 feature moves users to another Region?", o: ["Failover routing with health checks", "Private hosted zones", "Domain registration"], a: 0, why: "When the primary's health check fails, Route 53 answers with the secondary." } ],
+    ask: "Your CEO asks what happens if us-east-1 goes down for a day. What do you answer, and what does it cost?",
+    docs: [["Disaster recovery options in the cloud", "https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html"], ["Route 53 failover routing", "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-policy-failover.html"]] },
+];
+function showLessons(fromMenu, openId, view) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const done = store.get("loadrush-lessons", {});
+  const lv = id => LEVELS.find(l => l.id === id);
+  const nDone = LESSONS.filter(x => done[x.id]).length, nextId = (LESSONS.find(x => !done[x.id]) || {}).id;
+  if (!openId) {
+    const bySvc = {};
+    for (const x of LESSONS) for (const s of x.services) (bySvc[s] = bySvc[s] || []).push(x);
+    const svcs = Object.keys(bySvc).sort((a, b) => a.localeCompare(b));
+    const byTopic = view === "services";
+    openSheet(`<div class="kick">AWS lessons</div><h2>Learn AWS from every shift</h2>
+      <p class="gintro">Each shift is a real problem; each lesson is the AWS answer to it: how it works on AWS, the real numbers, the common mistake, a 3-question check and the AWS docs. Pass the check to tick the lesson.</p>
+      <div class="bprog"><span>${nDone} of ${LESSONS.length} lessons passed</span><div class="skillbar"><i style="width:${100 * nDone / LESSONS.length}%"></i></div></div>
+      <div class="acts" style="margin:8px 0"><button class="btn${byTopic ? "" : " go"}" id="bLsShifts">By shift</button><button class="btn${byTopic ? " go" : ""}" id="bLsSvc">By AWS service</button></div>
+      ${byTopic ? svcs.map(s => `<div class="msec"><h3>${s} <small>${bySvc[s].length} lesson${bySvc[s].length === 1 ? "" : "s"}</small></h3><div class="acts">${bySvc[s].map(x => `<button class="btn" data-ls="${x.id}">${done[x.id] ? "✓ " : ""}${x.topic}</button>`).join("")}</div></div>`).join("")
+      : `<div class="levels">${LESSONS.map(x => { const l = lv(x.id); return `<button class="lv${x.id === nextId ? " next" : ""}${done[x.id] ? " built" : ""}" data-ls="${x.id}">
+        <span class="n">Shift ${LEVELS.indexOf(l) + 1} · ${l.name}${x.id === nextId ? " <em>next</em>" : ""}${done[x.id] ? " · ✓ passed" : ""}</span><span class="t">${x.topic}</span><span class="d">${x.services.join(" · ")}</span></button>`; }).join("")}</div>`}
+      <div class="acts"><button class="btn" id="bLsBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back, "home");
+    $("#bLsBack").onclick = back;
+    $("#bLsShifts").onclick = () => showLessons(fromMenu);
+    $("#bLsSvc").onclick = () => showLessons(fromMenu, null, "services");
+    for (const el of document.querySelectorAll("[data-ls]")) el.onclick = () => showLessons(fromMenu, el.dataset.ls);
+    return;
+  }
+  const i = LESSONS.findIndex(x => x.id === openId), x = LESSONS[i], l = lv(x.id), st = ROADMAP.find(r => r.id === x.stage);
+  const buildId = SHIFT_BUILD[x.id], b = buildId && BUILDS.find(y => y.id === buildId), ok = unlockedId(x.id);
+  const parts = [...new Set(SKILLS.filter(k => k.level === x.id).flatMap(k => [...k.keys.map(q => FIX_PART[q]), k.part]).filter(t => t && PARTS[t]))];
+  const picks = {};
+  openSheet(`<div class="kick">AWS lesson ${i + 1} of ${LESSONS.length} · from the shift ${l.name}</div><h2>${x.topic}</h2>
+    <p class="gintro">${x.story}</p>
+    <p class="real"><b>AWS services:</b> ${x.services.join(", ")}</p>
+    <h3>How it works on AWS</h3><ul>${x.how.map(t => `<li>${t}</li>`).join("")}</ul>
+    <h3>Numbers worth knowing</h3><ul>${x.numbers.map(t => `<li>${t}</li>`).join("")}</ul>
+    <h3>The common mistake</h3><p>${x.mistake}</p>
+    <h3>Check yourself</h3>
+    ${x.check.map((c, k) => `<div class="lscheck"><p><b>${k + 1}. ${c.q}</b></p><div class="choices">${c.o.map((t, j) => `<button class="choice" data-q="${k}" data-o="${j}">${t}</button>`).join("")}</div><div class="lswhy" id="lsWhy${k}"></div></div>`).join("")}
+    <div id="lsScore"></div>
+    <h3>Interview question</h3><p>${x.ask}</p>
+    <h3>Read the AWS docs</h3><ul>${x.docs.map(([t, u]) => `<li><a href="${u}" target="_blank" rel="noopener">${t}</a></li>`).join("")}</ul>
+    <h3>Practise it</h3><div class="acts">
+      <button class="btn${ok ? " go" : ""}" id="bLsPlay" ${ok ? "" : `disabled style="opacity:.5;cursor:not-allowed" title="Win the shift before it first, or turn on Unlock every shift in Settings."`}>${stars[x.id] ? "✓ " : ""}Play ${l.name}${ok ? "" : " (locked)"}</button>
+      ${b ? `<button class="btn" id="bLsBuild">AWS Builder: ${b.name}</button>` : ""}
+      ${parts.map(t => `<button class="btn" data-lp="${t}">Part: ${PARTS[t].name}</button>`).join("")}
+      ${st ? `<button class="btn" id="bLsStage">Roadmap: ${st.name}</button>` : ""}</div>
+    <div class="acts" style="margin-top:12px">${i > 0 ? `<button class="btn" data-ls="${LESSONS[i - 1].id}">← ${LESSONS[i - 1].topic}</button>` : ""}<button class="btn" id="bLsAll">All lessons</button>${i < LESSONS.length - 1 ? `<button class="btn" data-ls="${LESSONS[i + 1].id}">${LESSONS[i + 1].topic} →</button>` : ""}</div>`, () => showLessons(fromMenu), "home");
+  $("#bLsAll").onclick = () => showLessons(fromMenu);
+  for (const el of document.querySelectorAll("[data-ls]")) el.onclick = () => showLessons(fromMenu, el.dataset.ls);
+  if (ok) $("#bLsPlay").onclick = () => load(l);
+  if (b) $("#bLsBuild").onclick = () => playBuild(b, fromMenu);
+  if (st) $("#bLsStage").onclick = () => showRoadmap(fromMenu, st.id);
+  for (const el of document.querySelectorAll("[data-lp]")) el.onclick = () => showGuide(fromMenu, el.dataset.lp);
+  for (const btn of document.querySelectorAll(".choice[data-q]")) btn.onclick = () => {
+    const k = +btn.dataset.q, c = x.check[k], j = +btn.dataset.o; if (k in picks) return;
+    picks[k] = j === c.a;
+    for (const o of document.querySelectorAll(`.choice[data-q="${k}"]`)) { o.disabled = true; if (+o.dataset.o === c.a) o.classList.add("right"); }
+    if (j !== c.a) btn.classList.add("wrong");
+    $("#lsWhy" + k).innerHTML = `<p class="real"><b>${j === c.a ? "Right." : "Not quite."}</b> ${c.why}</p>`;
+    if (Object.keys(picks).length === x.check.length) {
+      const n = Object.values(picks).filter(Boolean).length;
+      if (n === x.check.length) { const d = store.get("loadrush-lessons", {}); if (!d[x.id]) { d[x.id] = dayKey(); store.set("loadrush-lessons", d); toast(`Lesson passed: ${x.topic}.`); } }
+      track("lesson", `${x.id} ${n}/${x.check.length}`);
+      $("#lsScore").innerHTML = `<p><b>${n} of ${x.check.length} right.</b> ${n === x.check.length ? "Lesson passed and saved with your progress." : "Read the explanations, then open the lesson again to retry."}</p>`;
+    }
+  };
+}
 function showBuilder(fromMenu) {
   if (S) setRunning(false);
   const back = () => fromMenu ? showMenu() : closeSheet();
@@ -3478,6 +3781,7 @@ function end(win) {
       ${oc ? `<button class="btn go" id="bPractice">${oc.practice ? "Another practice shift" : "Practice shift (random)"}</button>` : ""}
       ${win && sc && !oc ? `<button class="btn" id="bShare">Challenge a friend</button>` : ""}
       ${SHIFT_BUILD[L.id] ? `<button class="btn" id="bNextBuild">Next: practise it on AWS (${BUILDS.find(b => b.id === SHIFT_BUILD[L.id]).name})</button>` : ""}
+      ${LESSONS.some(x => x.id === L.id) ? `<button class="btn" id="bLesson">AWS lesson</button>` : ""}
       <button class="btn ${win && next || oc ? "" : "go"}" id="bRetry">${oc && !oc.practice ? "Play today's again" : "Try again"}</button>
       ${worst && FIX_PART[worst.key] && L.tray.includes(FIX_PART[worst.key]) ? `<button class="btn ${win ? "" : "go"}" id="bRetryHint">Try again with a hint: ${PARTS[FIX_PART[worst.key]].name}</button>` : ""}
       <button class="btn" id="bMenu">All shifts</button>
@@ -3501,6 +3805,7 @@ function end(win) {
     track("oncall-share", oc.day);
   };
   $("#bRetry").onclick = () => { retryHint = null; load(L); };
+  if ($("#bLesson")) $("#bLesson").onclick = () => showLessons(true, L.id);
   if ($("#bShare")) $("#bShare").onclick = () => {
     const url = challengeLink(L, sc.total), text = `I scored ${sc.total} points on ${L.name} in Load Rush. Can you beat it? ${url}`;
     track("share", L.id);
@@ -3629,6 +3934,7 @@ function showMenu() {
         ${card("tour", "1 minute", "Tutorial", "A guided start on the first shift.")}
         ${card("guide", "Read", "Parts guide", "What each part does, with an everyday comparison and the real AWS service.")}
         ${card("roadmap", "100 days", "AWS roadmap", "Ten stages from a safe account to a portfolio project: learn, play the shift, build it, break it.", Object.keys(store.get("loadrush-roadmap", {})).length ? `${Object.keys(store.get("loadrush-roadmap", {})).length}/${ROADMAP.length} stages` : "")}
+        ${card("lessons", `${LESSONS.length} lessons`, "AWS lessons", "One AWS lesson per shift: how AWS solves it, real numbers, the common mistake, a quick check and the docs.", Object.keys(store.get("loadrush-lessons", {})).length ? `${Object.keys(store.get("loadrush-lessons", {})).length}/${LESSONS.length} passed` : "")}
         ${card("build", `${BUILDS.length} AWS services`, "AWS Builder", "Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.")}
         ${card("graphs", `${GRAPHS.length} dashboards`, "Read the graph", "Look at the lines and name the incident.", store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "")}
         ${card("quiz", `${QUIZ.length} questions`, "Quiz", "Which part fixes this?", store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "")}
@@ -3685,6 +3991,7 @@ function showMenu() {
     if (b.dataset.i === "graphs") { showGraphs(true); return; }
     if (b.dataset.i === "interview") { showInterview(true); return; }
     if (b.dataset.i === "roadmap") { showRoadmap(true); return; }
+    if (b.dataset.i === "lessons") { showLessons(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }
@@ -3811,7 +4118,7 @@ function saveGame() { store.set("loadrush-game", gameSnapshot(S, L)); }
 addEventListener("pagehide", saveGame);
 document.addEventListener("visibilitychange", () => { if (document.hidden) saveGame(); });
 const progressNow = () => ({ stars, role, teach: teachOn, present: presentOn, tour: !!store.get("loadrush-tour-done", false),
-  skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}), roadmap: store.get("loadrush-roadmap", {}) });
+  skills: store.get("loadrush-skills", {}), scores: store.get("loadrush-scores", {}), oncall: store.get("loadrush-oncall", {}), exp: store.get("loadrush-exp", {}), roadmap: store.get("loadrush-roadmap", {}), lessons: store.get("loadrush-lessons", {}) });
 function copyProgress() {
   const code = encodeProgress(progressNow());
   const box = $("#progCode"); box.value = code; box.hidden = false; box.select();
@@ -3825,17 +4132,17 @@ function loadProgress() {
   stars = p.stars; store.set("loadrush-stars", stars);
   role = p.role; store.set("loadrush-role", role);
   setTeach(p.teach); setPresent(p.present); store.set("loadrush-tour-done", p.tour);
-  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall); store.set("loadrush-exp", p.exp); store.set("loadrush-roadmap", p.roadmap);
+  store.set("loadrush-skills", p.skills); store.set("loadrush-scores", p.scores); store.set("loadrush-oncall", p.oncall); store.set("loadrush-exp", p.exp); store.set("loadrush-roadmap", p.roadmap); store.set("loadrush-lessons", p.lessons);
   showMenu(); toast(`Progress loaded: ${Object.keys(stars).length} shift${Object.keys(stars).length === 1 ? "" : "s"} with stars.`);
 }
 
 /* Progress link: the page address always carries your progress (#p=LR1-...), so a bookmark or the link opened on
    another device brings your stars back. Updated automatically whenever progress or settings change. */
-const LINK_KEYS = new Set(["loadrush-stars", "loadrush-role", "loadrush-teach", "loadrush-present", "loadrush-tour-done", "loadrush-skills", "loadrush-scores", "loadrush-oncall", "loadrush-exp", "loadrush-roadmap"]);
+const LINK_KEYS = new Set(["loadrush-stars", "loadrush-role", "loadrush-teach", "loadrush-present", "loadrush-tour-done", "loadrush-skills", "loadrush-scores", "loadrush-oncall", "loadrush-exp", "loadrush-roadmap", "loadrush-lessons"]);
 let linkTimer = null;
 function syncLink() {
   linkTimer = null;
-  if (!Object.keys(stars).length && !Object.keys(store.get("loadrush-skills", {})).length && !Object.keys(store.get("loadrush-roadmap", {})).length) return;   // nothing worth carrying yet
+  if (!Object.keys(stars).length && !Object.keys(store.get("loadrush-skills", {})).length && !Object.keys(store.get("loadrush-roadmap", {})).length && !Object.keys(store.get("loadrush-lessons", {})).length) return;   // nothing worth carrying yet
   try { history.replaceState(history.state, "", location.pathname + location.search + "#p=" + encodeProgress(progressNow())); } catch {}
 }
 { const set = store.set; store.set = (k, v) => { set.call(store, k, v); if (LINK_KEYS.has(k) && !linkTimer) linkTimer = setTimeout(syncLink, 300); }; }
@@ -3853,6 +4160,7 @@ function progressFromLink() {
   store.set("loadrush-skills", Object.assign({}, p.skills, store.get("loadrush-skills", {})));
   store.set("loadrush-exp", Object.assign({}, p.exp, store.get("loadrush-exp", {})));
   store.set("loadrush-roadmap", Object.assign({}, p.roadmap, store.get("loadrush-roadmap", {})));
+  store.set("loadrush-lessons", Object.assign({}, p.lessons, store.get("loadrush-lessons", {})));
   if (p.tour) store.set("loadrush-tour-done", true);
   if (fresh) { role = p.role; store.set("loadrush-role", role); setTeach(p.teach); setPresent(p.present); }
   if (gained) setTimeout(() => toast(`Progress restored from your link: ${gained} shift${gained === 1 ? "" : "s"} with stars.`), 400);
