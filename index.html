@@ -394,6 +394,13 @@ details.more[open] > summary { margin-bottom: 8px; }
 .choice.right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, var(--panel-2)); }
 .choice.wrong { border-color: var(--bad); }
 .choice:disabled { cursor: default; }
+.lsflow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 4px; }
+.lsnode { border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.lsnode b { color: var(--accent); } .lsarrow { color: var(--ink-faint); }
+.costtbl { display: grid; gap: 6px; margin: 10px 0; }
+.costrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 8px; padding: 8px 12px; }
+.costrow span { display: block; color: var(--ink-dim); font-size: 13px; } .costrow p { grid-column: 1 / -1; margin: 2px 0 0; font-size: 13px; color: var(--ink-dim); }
+.costusd { font: 600 15px var(--mono); white-space: nowrap; } .costusd small { font-weight: 400; color: var(--ink-faint); }
 .lscheck { margin: 10px 0 4px; } .lscheck .choices { margin-top: 6px; } .lswhy p { margin: 6px 0 0; }
 .why { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--ok); max-width: 66ch; }
 .why.no { border-left-color: var(--bad); }
@@ -3456,7 +3463,7 @@ function showLessons(fromMenu, openId, view) {
     openSheet(`<div class="kick">AWS lessons</div><h2>Learn AWS from every shift</h2>
       <p class="gintro">Each shift is a real problem; each lesson is the AWS answer to it: how it works on AWS, the real numbers, the common mistake, a 3-question check and the AWS docs. Pass the check to tick the lesson.</p>
       <div class="bprog"><span>${nDone} of ${LESSONS.length} lessons passed</span><div class="skillbar"><i style="width:${100 * nDone / LESSONS.length}%"></i></div></div>
-      <div class="acts" style="margin:8px 0"><button class="btn${byTopic ? "" : " go"}" id="bLsShifts">By shift</button><button class="btn${byTopic ? " go" : ""}" id="bLsSvc">By AWS service</button></div>
+      <div class="acts" style="margin:8px 0"><button class="btn${byTopic ? "" : " go"}" id="bLsShifts">By shift</button><button class="btn${byTopic ? " go" : ""}" id="bLsSvc">By AWS service</button><button class="btn" id="bLsCost">What it costs</button><button class="btn" id="bLsExam">Take the AWS exam</button></div>
       ${byTopic ? svcs.map(s => `<div class="msec"><h3>${s} <small>${bySvc[s].length} lesson${bySvc[s].length === 1 ? "" : "s"}</small></h3><div class="acts">${bySvc[s].map(x => `<button class="btn" data-ls="${x.id}">${done[x.id] ? "✓ " : ""}${x.topic}</button>`).join("")}</div></div>`).join("")
       : `<div class="levels">${LESSONS.map(x => { const l = lv(x.id); return `<button class="lv${x.id === nextId ? " next" : ""}${done[x.id] ? " built" : ""}" data-ls="${x.id}">
         <span class="n">Shift ${LEVELS.indexOf(l) + 1} · ${l.name}${x.id === nextId ? " <em>next</em>" : ""}${done[x.id] ? " · ✓ passed" : ""}</span><span class="t">${x.topic}</span><span class="d">${x.services.join(" · ")}</span></button>`; }).join("")}</div>`}
@@ -3464,6 +3471,8 @@ function showLessons(fromMenu, openId, view) {
     $("#bLsBack").onclick = back;
     $("#bLsShifts").onclick = () => showLessons(fromMenu);
     $("#bLsSvc").onclick = () => showLessons(fromMenu, null, "services");
+    $("#bLsCost").onclick = () => showCost(fromMenu);
+    $("#bLsExam").onclick = () => showExam(fromMenu);
     for (const el of document.querySelectorAll("[data-ls]")) el.onclick = () => showLessons(fromMenu, el.dataset.ls);
     return;
   }
@@ -3474,6 +3483,7 @@ function showLessons(fromMenu, openId, view) {
   openSheet(`<div class="kick">AWS lesson ${i + 1} of ${LESSONS.length} · from the shift ${l.name}</div><h2>${x.topic}</h2>
     <p class="gintro">${x.story}</p>
     <p class="real"><b>AWS services:</b> ${x.services.join(", ")}</p>
+    ${flowHtml(x.id)}
     <h3>How it works on AWS</h3><ul>${x.how.map(t => `<li>${t}</li>`).join("")}</ul>
     <h3>Numbers worth knowing</h3><ul>${x.numbers.map(t => `<li>${t}</li>`).join("")}</ul>
     <h3>The common mistake</h3><p>${x.mistake}</p>
@@ -3507,6 +3517,129 @@ function showLessons(fromMenu, openId, view) {
       $("#lsScore").innerHTML = `<p><b>${n} of ${x.check.length} right.</b> ${n === x.check.length ? "Lesson passed and saved with your progress." : "Read the explanations, then open the lesson again to retry."}</p>`;
     }
   };
+}
+/* Lesson diagrams: the request path for each lesson, left to right. A "*" marks the part the lesson is about. */
+const LESSON_FLOW = {
+  launch: ["Users", "*ALB", "*EC2 × 2", "Database"],
+  sale: ["Users", "ALB", "*Auto Scaling group", "*ElastiCache", "RDS + *read replica"],
+  bots: ["Users + bots", "*AWS WAF", "CloudFront", "ALB", "EC2"],
+  checkout: ["Users", "ALB", "EC2 (replies at once)", "*SQS queue", "*Workers", "Email / invoices"],
+  viral: ["Users", "*CloudFront edge", "*S3 (images, video)", "ALB → EC2 (pages only)"],
+  deploy: ["Users", "ALB", "*90% old version", "*10% new version (canary)", "*CloudWatch alarm → rollback"],
+  leak: ["EC2 / containers", "*CloudWatch agent", "*CloudWatch metrics", "*Alarm", "Page on-call / roll back"],
+  failover: ["App", "RDS endpoint (DNS)", "*Primary (zone A)", "*Standby (zone B)"],
+  zone: ["Users", "ALB", "*EC2 in zone A", "*EC2 in zone B", "RDS Multi-AZ"],
+  partner: ["Users", "EC2", "*Timeout + circuit breaker", "Payment partner API"],
+  stampede: ["App", "*ElastiCache (primary + replica)", "RDS (only on a miss)"],
+  cert: ["Users (HTTPS)", "ALB / CloudFront", "*ACM certificate", "*Route 53 DNS validation record"],
+  quiet: ["*CloudWatch Synthetics canary", "Website checkout", "*Orders per minute metric", "*Anomaly alarm", "Roll back"],
+  payday: ["Users", "API Gateway", "*SQS queue", "*Workers + idempotency key", "Bank / payment network"],
+  storm: ["*AWS Health events", "On-call + runbook", "*EC2 in 2 zones", "*RDS Multi-AZ"],
+  gameday: ["*FIS* switches off zone A", "Private EC2 in zone B", "*NAT gateway in zone B*", "Payment partner", "App → *RDS Proxy* → new RDS primary"],
+  release: ["*Roll back first", "*AppConfig feature flag", "*AWS WAF for the bots", "Hotfix through canary"],
+  friday: ["*Load test", "*Service Quotas raised", "*Scheduled scaling", "Release freeze", "Peak day"],
+  spot: ["ALB", "*On-Demand base", "*Spot (many types, many zones)", "*Capacity Rebalancing"],
+  retry: ["Phone apps", "*Backoff + jitter + retry quota", "API", "Database (recovering)"],
+  region: ["Users", "*Route 53 failover", "*Region 1 (main)", "*Region 2 (warm standby)", "*Aurora Global Database"],
+};
+function flowHtml(id) {
+  const f = LESSON_FLOW[id]; if (!f) return "";
+  return `<div class="lsflow" role="img" aria-label="${f.map(n => n.replace(/\*/g, "")).join(", then ")}">${f.map((n, k) => `${k ? `<span class="lsarrow" aria-hidden="true">→</span>` : ""}<span class="lsnode">${n.replace(/\*([^*]+)\*?/g, "<b>$1</b>")}</span>`).join("")}</div>`;
+}
+
+/* What it costs on real AWS: one row per game part. Rough us-east-1 on-demand list prices, rounded; a month is 730 hours. */
+const AWS_COST = [
+  ["app", "EC2 t3.small (2 vCPU, 2 GB)", 15, "About $0.021 an hour. Graviton (t4g) is about 20% cheaper. 750 free hours a month of a micro size in the first year on older free-tier accounts."],
+  ["lb", "Application Load Balancer", 16, "About $0.0225 an hour plus capacity units (LCUs) for traffic. One ALB can serve many apps through listener rules."],
+  ["auto", "EC2 Auto Scaling", 0, "Free. You pay only for the instances it starts."],
+  ["spot", "EC2 Spot (same t3.small)", 5, "Often 60 to 90% cheaper than On-Demand; can be taken back with a 2-minute warning."],
+  ["rebalance", "Capacity Rebalancing", 0, "Free setting on the Auto Scaling group."],
+  ["cache", "ElastiCache cache.t4g.micro", 12, "About $0.016 an hour per node. A replica for failover doubles it."],
+  ["db", "RDS db.t4g.micro (Single-AZ)", 12, "About $0.016 an hour plus storage (about $0.115 per GB a month on gp2)."],
+  ["standby", "RDS Multi-AZ standby", 12, "Multi-AZ roughly doubles the instance and storage price."],
+  ["replica", "RDS read replica", 12, "A replica costs the same as another instance of that size."],
+  ["proxy", "RDS Proxy", 22, "About $0.015 per database vCPU an hour, with a minimum of 2 vCPUs."],
+  ["nat", "NAT gateway (one per zone)", 33, "About $0.045 an hour each, plus $0.045 per GB processed. Two zones = about $66 a month before data. Free S3 and DynamoDB gateway endpoints avoid NAT charges for that traffic."],
+  ["cdn", "CloudFront", 0, "The first 1 TB out and 10 million requests a month are free; after that about $0.085 per GB in North America."],
+  ["waf", "AWS WAF", 7, "$5 per web ACL a month, $1 per rule a month, $0.60 per million requests. Bot Control is extra."],
+  ["acm", "ACM public certificate", 0, "Free when used with ALB, CloudFront or API Gateway."],
+  ["queue", "SQS standard queue", 0, "The first 1 million requests a month are free, then $0.40 per million."],
+  ["worker", "Workers (Lambda or EC2)", 0, "Lambda: 1 million requests and 400,000 GB-seconds a month free. On EC2, same price as an app server."],
+  ["canary", "CodeDeploy canary releases", 0, "Free for EC2, Lambda and ECS. You pay for the extra tasks or instances during the release."],
+  ["analysis", "CloudWatch metrics and alarms", 1, "10 custom metrics and 10 alarms free; then about $0.30 per metric and $0.10 per alarm a month."],
+  ["breaker", "Timeouts and circuit breaker", 0, "Code and settings: no AWS charge."],
+  ["jitter", "SDK backoff and jitter", 0, "Built into AWS SDKs: no charge."],
+  ["region2", "Second Region (warm standby)", 60, "A smaller copy of the stack, plus Route 53 health checks ($0.50 to $0.75 each a month) and data copied between Regions (about $0.02 per GB)."],
+];
+const COST_CHECK = [
+  { q: "Which part of a small two-zone setup often surprises people as the biggest fixed cost?", o: ["NAT gateways", "ACM certificates", "SQS"], a: 0, why: "Two NAT gateways are about $66 a month before any data, often more than the app servers." },
+  { q: "What do public ACM certificates cost on an ALB or CloudFront?", o: ["Nothing", "$5 a month", "$1 per domain"], a: 0, why: "Public ACM certificates used with integrated services are free." },
+  { q: "What usually happens to the database bill when you turn on RDS Multi-AZ?", o: ["It roughly doubles", "It stays the same", "It drops by half"], a: 0, why: "You pay for the standby instance and its storage as well." },
+];
+function showCost(fromMenu) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const small = ["app", "app", "lb", "nat", "nat", "db", "standby", "cache"], total = small.reduce((t, k) => t + AWS_COST.find(r => r[0] === k)[2], 0);
+  const picks = {};
+  openSheet(`<div class="kick">AWS lessons · cost</div><h2>What each part costs on real AWS</h2>
+    <p class="gintro">Every part in the game has a real price. These are rough monthly list prices in us-east-1 (N. Virginia), rounded, for the smallest sensible size. Prices change and differ by Region: check the AWS Pricing Calculator before you build.</p>
+    <div class="costtbl">${AWS_COST.map(([t, svc, usd, note]) => `<div class="costrow"><div><b>${PARTS[t] ? PARTS[t].name : t}</b><span>${svc}</span></div><div class="costusd">${usd ? `~$${usd}<small>/month</small>` : "free*"}</div><p>${note}</p></div>`).join("")}</div>
+    <p class="real">* Free means no charge for the feature itself or within a free allowance; you still pay for what it runs on.</p>
+    <h3>Example: a small production setup</h3>
+    <p>2 app servers + a load balancer + 2 NAT gateways (one per zone) + a Multi-AZ database + a cache ≈ <b>$${total} a month</b> before data transfer and storage. Of that, the NAT gateways alone are about $66.</p>
+    <h3>Ways to spend less</h3><ul>
+      <li>Put a $5 budget alarm on every learning account first (AWS Budgets).</li>
+      <li>Delete NAT gateways, load balancers and databases the same day you finish practising: they charge by the hour even when idle.</li>
+      <li>Use Spot for stateless servers, Graviton (t4g) sizes, and Savings Plans for steady load.</li>
+      <li>Use free gateway endpoints for S3 and DynamoDB instead of sending that traffic through NAT.</li>
+      <li>Practise locally first with Docker, LocalStack or Moto.</li></ul>
+    <h3>Check yourself</h3>
+    ${COST_CHECK.map((c, k) => `<div class="lscheck"><p><b>${k + 1}. ${c.q}</b></p><div class="choices">${c.o.map((t, j) => `<button class="choice" data-q="${k}" data-o="${j}">${t}</button>`).join("")}</div><div class="lswhy" id="lsWhy${k}"></div></div>`).join("")}
+    <h3>Read more</h3><ul><li><a href="https://calculator.aws/" target="_blank" rel="noopener">AWS Pricing Calculator</a></li><li><a href="https://aws.amazon.com/free/" target="_blank" rel="noopener">AWS Free Tier</a></li><li><a href="https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html" target="_blank" rel="noopener">AWS Budgets</a></li></ul>
+    <div class="acts" style="margin-top:12px"><button class="btn" id="bCostLessons">All AWS lessons</button><button class="btn" id="bCostBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div>`, back, "home");
+  $("#bCostBack").onclick = back; $("#bCostLessons").onclick = () => showLessons(fromMenu);
+  for (const btn of document.querySelectorAll(".choice[data-q]")) btn.onclick = () => {
+    const k = +btn.dataset.q, c = COST_CHECK[k], j = +btn.dataset.o; if (k in picks) return; picks[k] = j === c.a;
+    for (const o of document.querySelectorAll(`.choice[data-q="${k}"]`)) { o.disabled = true; if (+o.dataset.o === c.a) o.classList.add("right"); }
+    if (j !== c.a) btn.classList.add("wrong");
+    $("#lsWhy" + k).innerHTML = `<p class="real"><b>${j === c.a ? "Right." : "Not quite."}</b> ${c.why}</p>`;
+  };
+}
+
+/* AWS exam: 15 random questions from every lesson and the cost lesson, options shuffled. */
+function showExam(fromMenu) {
+  if (S) setRunning(false);
+  const back = () => fromMenu ? showMenu() : closeSheet();
+  const pool = [...LESSONS.flatMap(x => x.check.map(c => ({ ...c, from: x }))), ...COST_CHECK.map(c => ({ ...c, from: null }))];
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const qs = shuffle(pool.slice()).slice(0, 15).map(c => { const order = shuffle(c.o.map((_, j) => j)); return { ...c, o: order.map(j => c.o[j]), a: order.indexOf(c.a) }; });
+  let i = 0, score = 0; const missed = [];
+  const ask = () => {
+    const c = qs[i];
+    openSheet(`<div class="kick">AWS exam · question ${i + 1} of ${qs.length} · ${score} right so far</div><h2>${c.q}</h2>
+      <div class="choices">${c.o.map((t, j) => `<button class="choice" data-o="${j}">${t}</button>`).join("")}</div><div id="exWhy"></div>`, back);
+    for (const b of document.querySelectorAll(".choice[data-o]")) b.onclick = () => {
+      const ok = +b.dataset.o === c.a; if (ok) score++; else if (c.from && !missed.includes(c.from)) missed.push(c.from);
+      for (const o of document.querySelectorAll(".choice[data-o]")) { o.disabled = true; if (+o.dataset.o === c.a) o.classList.add("right"); }
+      if (!ok) b.classList.add("wrong");
+      $("#exWhy").innerHTML = `<p><b>${ok ? "Right." : "Not quite."}</b> ${c.why}</p><p class="real">From the lesson: ${c.from ? c.from.topic : "What each part costs on real AWS"}</p>
+        <div class="acts"><button class="btn go" id="bExNext">${i + 1 < qs.length ? "Next question" : "See my result"}</button></div>`;
+      $("#bExNext").onclick = () => { i++; i < qs.length ? ask() : done(); };
+    };
+  };
+  const done = () => {
+    const pct = Math.round(100 * score / qs.length), best = Math.max(score, store.get("loadrush-exam-best", 0)); store.set("loadrush-exam-best", best);
+    track("exam", String(score));
+    const grade = pct >= 87 ? "Ready for the AWS Solutions Architect Associate topics in these lessons." : pct >= 67 ? "A solid base. Retake the lessons you missed, then try again." : "Work through the lessons below, then take the exam again.";
+    const share = `I scored ${score}/${qs.length} on the Load Rush AWS exam. Learn AWS by keeping a website up: ${location.origin}${location.pathname}`;
+    openSheet(`<div class="kick">AWS exam</div><h2>${score} of ${qs.length} right (${pct}%)</h2><p>${grade}</p><p class="real">Best so far: ${best} of ${qs.length}.</p>
+      ${missed.length ? `<h3>Lessons to review</h3><div class="acts">${missed.map(x => `<button class="btn" data-ls="${x.id}">${x.topic}</button>`).join("")}</div>` : ""}
+      <div class="acts" style="margin-top:12px"><button class="btn go" id="bExShare">Copy my result</button><button class="btn" id="bExAgain">New exam</button><button class="btn" id="bExBack">${fromMenu ? "Back to the menu" : "Back to the game"}</button></div><div class="real" id="exMsg"></div>`, back);
+    $("#bExAgain").onclick = () => showExam(fromMenu); $("#bExBack").onclick = back;
+    for (const el of document.querySelectorAll("[data-ls]")) el.onclick = () => showLessons(fromMenu, el.dataset.ls);
+    $("#bExShare").onclick = () => { try { navigator.clipboard.writeText(share).then(() => { $("#exMsg").textContent = "Copied. Paste it anywhere."; }, () => { $("#exMsg").textContent = share; }); } catch { $("#exMsg").textContent = share; } };
+  };
+  ask();
 }
 function showBuilder(fromMenu) {
   if (S) setRunning(false);
@@ -3935,6 +4068,8 @@ function showMenu() {
         ${card("guide", "Read", "Parts guide", "What each part does, with an everyday comparison and the real AWS service.")}
         ${card("roadmap", "100 days", "AWS roadmap", "Ten stages from a safe account to a portfolio project: learn, play the shift, build it, break it.", Object.keys(store.get("loadrush-roadmap", {})).length ? `${Object.keys(store.get("loadrush-roadmap", {})).length}/${ROADMAP.length} stages` : "")}
         ${card("lessons", `${LESSONS.length} lessons`, "AWS lessons", "One AWS lesson per shift: how AWS solves it, real numbers, the common mistake, a quick check and the docs.", Object.keys(store.get("loadrush-lessons", {})).length ? `${Object.keys(store.get("loadrush-lessons", {})).length}/${LESSONS.length} passed` : "")}
+        ${card("exam", "15 questions", "AWS exam", "Random questions from every AWS lesson, with the lessons to review and a result you can share.", store.get("loadrush-exam-best", 0) ? `best ${store.get("loadrush-exam-best", 0)}/15` : "")}
+        ${card("cost", "Real prices", "What AWS costs", "The monthly AWS price of every part in the game, a small production example and ways to spend less.")}
         ${card("build", `${BUILDS.length} AWS services`, "AWS Builder", "Put the real setup steps of an ALB, API Gateway, CloudFront and more in order.")}
         ${card("graphs", `${GRAPHS.length} dashboards`, "Read the graph", "Look at the lines and name the incident.", store.get("loadrush-graphs-best", 0) ? `best ${store.get("loadrush-graphs-best", 0)}/${GRAPHS.length}` : "")}
         ${card("quiz", `${QUIZ.length} questions`, "Quiz", "Which part fixes this?", store.get("loadrush-quiz-best", 0) ? `best ${store.get("loadrush-quiz-best", 0)}/${QUIZ.length}` : "")}
@@ -3992,6 +4127,8 @@ function showMenu() {
     if (b.dataset.i === "interview") { showInterview(true); return; }
     if (b.dataset.i === "roadmap") { showRoadmap(true); return; }
     if (b.dataset.i === "lessons") { showLessons(true); return; }
+    if (b.dataset.i === "exam") { showExam(true); return; }
+    if (b.dataset.i === "cost") { showCost(true); return; }
     if (b.dataset.i === "tour") { wantTour = true; load(LEVELS[0]); return; }
     if (b.dataset.i === "oncall") { load(makeOnCall(dayKey())); return; }
     if (b.dataset.i === "practice") { load(makeOnCall(dayKey(), Math.floor(Math.random() * 1e9))); return; }
